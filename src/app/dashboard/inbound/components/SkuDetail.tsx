@@ -905,15 +905,15 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
                                         <Barcode format={"ITF"} value={barcode.barcodeID} height={25} width={1} fontSize={7} margin={0} />
                                         <p className="text-[6px] leading-none mt-[-2px] text-center" style={{
                                             position: "absolute",
-                                            bottom: 16
+                                            bottom: 17
                                         }}>{barcode.skuCode}</p>
                                         <p className="text-[6px] font-sans leading-none mt-[-14px] text-center" style={{
                                             position: "absolute",
-                                            bottom: 13
+                                            bottom: 12
                                         }}>{barcode.poNumber?.toUpperCase()} {barcode.supplier?.toUpperCase()}</p>
                                         <p className="text-[6px] font-sans leading-none mt-[-16px] text-center" style={{
                                             position: "absolute",
-                                            bottom: 10
+                                            bottom: 7
                                         }}>{barcode.quantity} {barcode.unit.toUpperCase()}</p>
                                     </div>
                                 ))}
