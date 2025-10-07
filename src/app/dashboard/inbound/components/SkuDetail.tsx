@@ -905,7 +905,7 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
                                         <Barcode format={"ITF"} value={barcode.barcodeID} height={25} width={1} fontSize={7} margin={0} />
                                         <p className="text-[6px] leading-none mt-[-2px] text-center" style={{
                                             position: "absolute",
-                                            bottom: 1
+                                            bottom: 10
                                         }}>{barcode.skuCode}</p>
                                         <p className="text-[6px] font-sans leading-none mt-[-14px] text-center" style={{
                                             position: "absolute",
