@@ -27,18 +27,16 @@ export type Permissions = {
   canPrintAll: boolean;
   canPrintSelected: boolean;
 
-  // Warehouse In/Out
-  // canRecordTransaction: boolean; (re-using canGenerateBarcode for now)
-
-  // Stock Opname
-  canFlagItemAsLost: boolean;
+  // Warehouse In/Out & Stock Opname
+  canStartStockOpname: boolean;
+  canMarkItemAsLost: boolean;
   canRestoreLostItem: boolean;
   
   // User & Role Management
   canManageUsers: boolean;
   canManageRoles: boolean;
   
-  // Activity & Audit Logs
+  // Activity & Reporting
   canViewActivityLogs: boolean;
   canExportLogs: boolean;
   canClearLogs: boolean;

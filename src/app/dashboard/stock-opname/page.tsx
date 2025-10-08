@@ -1,4 +1,3 @@
-
 'use client';
 
 import * as React from 'react';
@@ -37,7 +36,7 @@ import {
   AlertTriangle,
   Calendar as CalendarIcon,
 } from 'lucide-react';
-import { Barcode as BarcodeType, StockOpnameLog, Sku } from '@/lib/types';
+import { Barcode as BarcodeType, StockOpnameLog, Sku, Permissions } from '@/lib/types';
 import {
   Table,
   TableBody,
@@ -73,6 +72,14 @@ import { useSearchParams } from 'next/navigation';
 import { DateRange } from 'react-day-picker';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command"
 import { format } from 'date-fns';
 import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
 import dynamic from 'next/dynamic';
@@ -122,6 +129,9 @@ function StockOpnameContent() {
 
   // Pagination state
   const [currentPage, setCurrentPage] = React.useState(1);
+
+  // Combobox state
+  const [isComboboxOpen, setIsComboboxOpen] = React.useState(false);
 
 
   const storeIdToQuery = user?.email === 'superadmin@caliloops.com' ? selectedStoreId : (user?.storeId || null);
@@ -283,11 +293,10 @@ function StockOpnameContent() {
 
   const handleOpenConfirmModal = async (log: StockOpnameLog) => {
     setSelectedLog(log);
-    setMissingBarcodeDetails([]); // Clear previous details
+    setMissingBarcodeDetails([]);
     setIsConfirmModalOpen(true);
     if (log.notOkBarcodes && log.notOkBarcodes.length > 0) {
         setLoadingMissingDetails(true);
-        console.log('[handleOpenConfirmModal] Fetching details for barcodes:', log.notOkBarcodes);
         try {
             const details = await getBarcodesByBarcodeIds(log.notOkBarcodes, log.storeId);
             setMissingBarcodeDetails(details);
@@ -302,7 +311,7 @@ function StockOpnameContent() {
 
 
   const handleConfirmLost = async (barcodeId: string) => {
-    if (!selectedLog || (!permissions?.canFlagItemAsLost && !permissions?.hasFullAccess)) {
+    if (!selectedLog || (!permissions?.canMarkItemAsLost && !permissions?.hasFullAccess)) {
       toast({ title: 'Permission Denied or No Log Selected', variant: 'destructive' });
       return;
     }
@@ -313,10 +322,8 @@ function StockOpnameContent() {
       await confirmSingleLostPack(selectedLog, barcodeId);
       toast({ title: `Barcode ${barcodeId} confirmed as lost!` });
       
-      // Refresh the missing details list
       setMissingBarcodeDetails(prev => prev.filter(b => b.barcodeID !== barcodeId));
 
-      // Update the selected log in state so the UI reflects the change
       const updatedLog = { ...selectedLog, notOkBarcodes: selectedLog.notOkBarcodes.filter(id => id !== barcodeId) };
       if (updatedLog.notOkBarcodes.length === 0) {
         updatedLog.discrepancyStatus = 'confirmed';
@@ -474,7 +481,7 @@ function StockOpnameContent() {
             }}
           >
             <DialogTrigger asChild>
-              {(permissions?.canFlagItemAsLost || permissions?.hasFullAccess) && (
+              {(permissions?.canStartStockOpname || permissions?.hasFullAccess) && (
               <Button disabled={!canPerformActions} size="sm">
                 <PlusCircle className="h-4 w-4 mr-2" />
                 Start Stock Opname
@@ -491,19 +498,50 @@ function StockOpnameContent() {
                     </DialogDescription>
                   </DialogHeader>
                   <div className="py-6">
-                    <Label htmlFor="sku-select">SKU</Label>
-                    <Select value={skuCode} onValueChange={setSkuCode}>
-                      <SelectTrigger id="sku-select" className="w-full mt-2">
-                        <SelectValue placeholder="Select an SKU" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {allSkus.map((sku) => (
-                          <SelectItem key={sku.id} value={sku.skuCode}>
-                            {sku.skuName} ({sku.skuCode})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Label htmlFor="sku-select" className='mb-2 block'>SKU</Label>
+                     <Popover open={isComboboxOpen} onOpenChange={setIsComboboxOpen}>
+                        <PopoverTrigger asChild>
+                            <Button
+                            variant="outline"
+                            role="combobox"
+                            aria-expanded={isComboboxOpen}
+                            className="w-full justify-between"
+                            >
+                            {skuCode
+                                ? allSkus.find((sku) => sku.skuCode === skuCode)?.skuName
+                                : "Select SKU..."}
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-full p-0">
+                            <Command>
+                            <CommandInput placeholder="Search SKU..." />
+                            <CommandList>
+                                <CommandEmpty>No SKU found.</CommandEmpty>
+                                <CommandGroup>
+                                {allSkus.map((sku) => (
+                                    <CommandItem
+                                    key={sku.id}
+                                    value={sku.skuCode}
+                                    onSelect={(currentValue) => {
+                                        setSkuCode(currentValue === skuCode ? "" : currentValue)
+                                        setIsComboboxOpen(false)
+                                    }}
+                                    >
+                                    <Check
+                                        className={cn(
+                                        "mr-2 h-4 w-4",
+                                        skuCode === sku.skuCode ? "opacity-100" : "opacity-0"
+                                        )}
+                                    />
+                                    {sku.skuName} ({sku.skuCode})
+                                    </CommandItem>
+                                ))}
+                                </CommandGroup>
+                            </CommandList>
+                            </Command>
+                        </PopoverContent>
+                    </Popover>
                   </div>
                   <DialogFooter>
                     <Button
@@ -883,7 +921,7 @@ function StockOpnameContent() {
                        )}
                     </TableCell>
                      <TableCell>
-                        {log.status === 'NOT OK' && log.discrepancyStatus === 'pending' && (permissions?.canFlagItemAsLost || permissions?.hasFullAccess) && (
+                        {log.status === 'NOT OK' && log.discrepancyStatus === 'pending' && (permissions?.canMarkItemAsLost || permissions?.hasFullAccess) && (
                             <Button variant="outline" size="sm" onClick={() => handleOpenConfirmModal(log)}>
                                 Follow Up Action
                             </Button>
@@ -947,6 +985,7 @@ function StockOpnameContent() {
                                     <p className='font-mono text-sm text-destructive'>
                                         {barcodeId} {barcode ? `(${barcode.quantity} ${barcode.unit})` : '(details not found)'}
                                     </p>
+                                    {(permissions?.canMarkItemAsLost || permissions?.hasFullAccess) && (
                                     <Button 
                                         variant="destructive" 
                                         size="sm" 
@@ -955,6 +994,7 @@ function StockOpnameContent() {
                                     >
                                         {isConfirming[barcodeId] ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : 'Mark as Lost'}
                                     </Button>
+                                    )}
                                 </div>
                             );
                         })
@@ -985,3 +1025,6 @@ export default function StockOpnamePage() {
       </React.Suspense>
     );
   }
+
+    
+    

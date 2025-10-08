@@ -35,7 +35,7 @@ export function DashboardSidebarContent() {
   const links = [
     { href: '/dashboard/inbound', label: 'Inbound', icon: ArrowDownToLine, requiredPermission: 'canGenerateBarcode' },
     { href: '/dashboard/warehouse-io', label: 'Warehouse In/Out', icon: ArrowRightLeft, requiredPermission: 'canGenerateBarcode' },
-    { href: '/dashboard/stock-opname', label: 'Stock Opname', icon: ClipboardList, requiredPermission: 'canFlagItemAsLost' },
+    { href: '/dashboard/stock-opname', label: 'Stock Opname', icon: ClipboardList, requiredPermission: 'canStartStockOpname' },
     { href: '/dashboard/activity-logging', label: 'Activity Logging', icon: History, requiredPermission: 'canViewActivityLogs' },
     { href: '/dashboard/user-access', label: 'User Access & Role', icon: Users, requiredPermission: 'canManageUsers' },
     { href: '/dashboard/stores', label: 'Store Management', icon: Store, requiredPermission: 'canManageUsers' },

@@ -264,21 +264,22 @@ export const getBarcodesBySkuCode = async (skuCode: string, storeId: string): Pr
     return enrichBarcodesWithShipmentData(barcodes);
 }
 
-export const getBarcodesByBarcodeIds = async (barcodeDocumentIds: string[], storeId: string): Promise<Barcode[]> => {
-    if (barcodeDocumentIds.length === 0) return [];
+export const getBarcodesByBarcodeIds = async (barcodeIds: string[], storeId: string): Promise<Barcode[]> => {
+    if (barcodeIds.length === 0) return [];
     
     // Firestore 'in' queries are limited to 30 values.
     const chunks: string[][] = [];
-    for (let i = 0; i < barcodeDocumentIds.length; i += 30) {
-        chunks.push(barcodeDocumentIds.slice(i, i + 30));
+    for (let i = 0; i < barcodeIds.length; i += 30) {
+        chunks.push(barcodeIds.slice(i, i + 30));
     }
     
     const results: Barcode[] = [];
     
     for (const chunk of chunks) {
+        // Corrected Query: Use 'barcodeID' field instead of documentId()
         const q = query(
             barcodesCollection, 
-            where(documentId(), 'in', chunk),
+            where('barcodeID', 'in', chunk),
             where('storeId', '==', storeId)
         );
         const querySnapshot = await getDocs(q);

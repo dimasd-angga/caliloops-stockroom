@@ -17,11 +17,13 @@ import { Loader2 } from 'lucide-react';
 const defaultPermissions: Permissions = {
   canGenerateBarcode: false,
   canReprintBarcode: false,
-  canDeleteBarcode: false,
-  canEditPackQuantity: false,
   canDeleteItemList: false,
   canEditItemDetails: false,
-  canFlagItemAsLost: false,
+  canEditPackQuantity: false,
+  canPrintAll: false,
+  canPrintSelected: false,
+  canStartStockOpname: false,
+  canMarkItemAsLost: false,
   canRestoreLostItem: false,
   canManageUsers: false,
   canManageRoles: false,
@@ -29,18 +31,18 @@ const defaultPermissions: Permissions = {
   canExportLogs: false,
   canClearLogs: false,
   hasFullAccess: false,
-  canPrintAll: false,
-  canPrintSelected: false,
 };
 
 const godModePermissions: Permissions = {
     canGenerateBarcode: true,
     canReprintBarcode: true,
-    canDeleteBarcode: true,
-    canEditPackQuantity: true,
     canDeleteItemList: true,
     canEditItemDetails: true,
-    canFlagItemAsLost: true,
+    canEditPackQuantity: true,
+    canPrintAll: true,
+    canPrintSelected: true,
+    canStartStockOpname: true,
+    canMarkItemAsLost: true,
     canRestoreLostItem: true,
     canManageUsers: true,
     canManageRoles: true,
@@ -48,8 +50,6 @@ const godModePermissions: Permissions = {
     canExportLogs: true,
     canClearLogs: true,
     hasFullAccess: true,
-    canPrintAll: true,
-    canPrintSelected: true,
   };
 
 const superAdminStorePermissions: Permissions = {

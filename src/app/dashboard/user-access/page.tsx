@@ -68,22 +68,23 @@ import { Separator } from '@/components/ui/separator';
 
 const ROWS_PER_PAGE = 10;
 const defaultPermissions: Permissions = {
-    canGenerateBarcode: false,
-    canReprintBarcode: false,
-    canDeleteItemList: false,
-    canEditItemDetails: false,
-    canEditPackQuantity: false,
-    canPrintAll: false,
-    canPrintSelected: false,
-    canFlagItemAsLost: false,
-    canRestoreLostItem: false,
-    canManageUsers: false,
-    canManageRoles: false,
-    canViewActivityLogs: false,
-    canExportLogs: false,
-    canClearLogs: false,
-    hasFullAccess: false,
-  };
+  canGenerateBarcode: false,
+  canReprintBarcode: false,
+  canDeleteItemList: false,
+  canEditItemDetails: false,
+  canEditPackQuantity: false,
+  canPrintAll: false,
+  canPrintSelected: false,
+  canStartStockOpname: false,
+  canMarkItemAsLost: false,
+  canRestoreLostItem: false,
+  canManageUsers: false,
+  canManageRoles: false,
+  canViewActivityLogs: false,
+  canExportLogs: false,
+  canClearLogs: false,
+  hasFullAccess: false,
+};
 
 const permissionCategories = {
     "Inbound & Barcodes": [
@@ -96,7 +97,8 @@ const permissionCategories = {
         { id: "canEditPackQuantity", label: "Can Edit Pack Quantity (Not Implemented)" },
     ],
     "Stock Opname & Warehouse": [
-        { id: "canFlagItemAsLost", label: "Can Flag Item as Lost / Start Audit" },
+        { id: "canStartStockOpname", label: "Can Start Stock Opname" },
+        { id: "canMarkItemAsLost", label: "Can Mark Item as Lost (Confirm Discrepancy)" },
         { id: "canRestoreLostItem", label: "Can Restore a Lost Item" },
     ],
     "Activity & Reporting": [
@@ -517,5 +519,3 @@ export default function UsersPage() {
     </div>
   );
 }
-
-    

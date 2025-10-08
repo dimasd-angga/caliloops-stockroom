@@ -534,7 +534,7 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
                                 Print All
                             </Button>
                         )}
-                        {(permissions?.canFlagItemAsLost || permissions?.hasFullAccess) && (
+                        {(permissions?.canStartStockOpname || permissions?.hasFullAccess) && (
                             <Button variant="outline" size="sm" onClick={handleStartAudit}>
                                 <ClipboardList className="mr-2 h-4 w-4"/>
                                 Start Audit
