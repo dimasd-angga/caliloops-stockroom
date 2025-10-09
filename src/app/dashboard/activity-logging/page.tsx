@@ -45,7 +45,7 @@ import {
   subscribeToAllLogs,
   UnifiedLog,
 } from '@/lib/services/activityLogService';
-import { Badge } from '@/components/ui/badge';
+import { Badge, BadgeProps } from '@/components/ui/badge';
 import * as xlsx from 'xlsx';
 import { format } from 'date-fns';
 import { UserContext } from '@/app/dashboard/layout';
@@ -227,7 +227,7 @@ export default function ActivityLoggingPage() {
     toast({ title: "Export successful!" });
   };
 
-  const getBadgeVariant = (
+  const getTypeBadgeVariant = (
     type: string
   ): 'default' | 'secondary' | 'destructive' | 'outline' => {
     switch (type) {
@@ -240,6 +240,16 @@ export default function ActivityLoggingPage() {
       default:
         return 'default';
     }
+  };
+
+  const getStatusBadgeVariant = (status: string | null): BadgeProps['variant'] => {
+    if (!status) return 'default';
+    const s = status.toUpperCase();
+    if (s === 'OK') return 'success';
+    if (s === 'NOT OK') return 'warning';
+    if (s === 'OUT') return 'destructive';
+    if (s === 'IN' || s === 'RECEIVED') return 'info';
+    return 'default';
   };
 
   return (
@@ -420,7 +430,7 @@ export default function ActivityLoggingPage() {
                       {log.datetime.toLocaleString()}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={getBadgeVariant(log.type)}>
+                      <Badge variant={getTypeBadgeVariant(log.type)}>
                         {log.type}
                       </Badge>
                     </TableCell>
@@ -430,11 +440,7 @@ export default function ActivityLoggingPage() {
                     <TableCell>
                       {log.status && (
                         <Badge
-                          variant={
-                            log.status.includes('OK')
-                              ? 'success'
-                              : 'destructive'
-                          }
+                          variant={getStatusBadgeVariant(log.status)}
                         >
                           {log.status}
                         </Badge>

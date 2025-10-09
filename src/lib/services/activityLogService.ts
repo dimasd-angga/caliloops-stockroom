@@ -98,7 +98,7 @@ export const subscribeToAllLogs = (
         type: 'Opname',
         sku: data.skuCode,
         storeId: data.storeId,
-        details: `Stock opname for ${data.skuName}. Found: ${data.totalOKPacks}/${data.totalPcs}.`,
+        details: `Stock opname for ${data.skuName}. Found: ${data.totalOKPacks} pack of ${data.totalPacks} packs.`,
         user: data.user,
         status: data.status,
       };

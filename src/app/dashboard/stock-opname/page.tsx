@@ -82,6 +82,8 @@ import {
 } from "@/components/ui/command"
 import { format } from 'date-fns';
 import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
+import {SearchableSelect} from '@/components/ui/searchable-dropdown'
+
 import dynamic from 'next/dynamic';
 
 const ClientScanner = dynamic(() => import('@/components/ui/scanner').then(m => m.ClientScanner), { ssr: false });
@@ -90,6 +92,134 @@ type OpnameStep = 'selection' | 'scanning' | 'result';
 
 type OpnameResult = Omit<StockOpnameLog, 'id' | 'datetime'>;
 const ROWS_PER_PAGE = 10;
+const SKU_DROPDOWN_ROWS_PER_PAGE = 50;
+
+const SKUCombobox = ({ allSkus, value, onSelect }: { allSkus: Sku[], value: string, onSelect: (skuCode: string) => void }) => {
+  const [open, setOpen] = React.useState(false);
+  const [searchTerm, setSearchTerm] = React.useState('');
+  const [currentPage, setCurrentPage] = React.useState(1);
+  const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+
+  const filteredSkus = React.useMemo(() => {
+      return allSkus.filter(sku =>
+          sku.skuName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          sku.skuCode.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+  }, [allSkus, searchTerm]);
+
+  const totalPages = Math.ceil(filteredSkus.length / SKU_DROPDOWN_ROWS_PER_PAGE);
+  const paginatedSkus = React.useMemo(() => {
+      const startIndex = (currentPage - 1) * SKU_DROPDOWN_ROWS_PER_PAGE;
+      const endIndex = startIndex + SKU_DROPDOWN_ROWS_PER_PAGE;
+      return filteredSkus.slice(startIndex, endIndex);
+  }, [filteredSkus, currentPage]);
+
+  React.useEffect(() => {
+      setCurrentPage(1);
+  }, [searchTerm]);
+
+  const handleSelect = (skuCode: string) => {
+      onSelect(skuCode === value ? "" : skuCode);
+      setOpen(false);
+  };
+
+  return (
+      <Popover open={open} onOpenChange={setOpen} modal={false}>
+          <PopoverTrigger asChild>
+              <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={open}
+                  className="w-full justify-between"
+              >
+                  {value
+                      ? allSkus.find((sku) => sku.skuCode === value)?.skuName
+                      : "Select SKU..."}
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+          </PopoverTrigger>
+          <PopoverContent 
+              className="w-[--radix-popover-trigger-width] p-0" 
+              align="start"
+          >
+              <div className="p-2 border-b bg-white sticky top-0 z-10">
+                  <Input
+                      placeholder="Search SKU..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="h-9"
+                  />
+              </div>
+              <div 
+                  ref={scrollContainerRef}
+                  className="p-1"
+                  style={{ 
+                      height: '300px', 
+                      overflowY: 'scroll',
+                      WebkitOverflowScrolling: 'touch'
+                  }}
+              >
+                  {paginatedSkus.length === 0 ? (
+                      <div className="py-6 text-center text-sm text-muted-foreground">
+                          No SKU found.
+                      </div>
+                  ) : (
+                      paginatedSkus.map((sku) => (
+                          <button
+                              key={sku.id}
+                              type="button"
+                              onClick={() => handleSelect(sku.skuCode)}
+                              className={cn(
+                                  "w-full relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground mb-1 transition-colors",
+                                  value === sku.skuCode && "bg-accent"
+                              )}
+                          >
+                              <Check
+                                  className={cn(
+                                      "mr-2 h-4 w-4 flex-shrink-0",
+                                      value === sku.skuCode ? "opacity-100" : "opacity-0"
+                                  )}
+                              />
+                              <span className="truncate text-left">{sku.skuName} ({sku.skuCode})</span>
+                          </button>
+                      ))
+                  )}
+              </div>
+              {totalPages > 1 && (
+                  <div className='p-2 flex justify-center items-center border-t bg-white sticky bottom-0'>
+                      <Button
+                          variant="ghost"
+                          size="sm"
+                          type="button"
+                          onClick={() => {
+                              setCurrentPage(p => Math.max(1, p - 1));
+                              scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                          }}
+                          disabled={currentPage === 1}
+                      >
+                          Previous
+                      </Button>
+                      <span className='text-sm text-muted-foreground mx-2'>
+                          {currentPage} / {totalPages}
+                      </span>
+                      <Button
+                          variant="ghost"
+                          size="sm"
+                          type="button"
+                          onClick={() => {
+                              setCurrentPage(p => Math.min(totalPages, p + 1));
+                              scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                          }}
+                          disabled={currentPage === totalPages}
+                      >
+                          Next
+                      </Button>
+                  </div>
+              )}
+          </PopoverContent>
+      </Popover>
+  );
+}
 
 function StockOpnameContent() {
   const { toast } = useToast();
@@ -129,10 +259,6 @@ function StockOpnameContent() {
 
   // Pagination state
   const [currentPage, setCurrentPage] = React.useState(1);
-
-  // Combobox state
-  const [isComboboxOpen, setIsComboboxOpen] = React.useState(false);
-
 
   const storeIdToQuery = user?.email === 'superadmin@caliloops.com' ? selectedStoreId : (user?.storeId || null);
 
@@ -409,7 +535,7 @@ function StockOpnameContent() {
 
   const canPerformActions = user?.email === 'superadmin@caliloops.com' ? !!selectedStoreId : !!user?.storeId;
 
-  // Pagination Logic
+  // Pagination Logic for main log table
   const totalPages = Math.ceil(logs.length / ROWS_PER_PAGE);
   const paginatedLogs = React.useMemo(() => {
     const startIndex = (currentPage - 1) * ROWS_PER_PAGE;
@@ -456,7 +582,7 @@ function StockOpnameContent() {
     }
     return items;
   };
-
+  
   const missingBarcodesMap = React.useMemo(() => {
     return new Map(missingBarcodeDetails.map(b => [b.barcodeID, b]));
   }, [missingBarcodeDetails]);
@@ -499,49 +625,19 @@ function StockOpnameContent() {
                   </DialogHeader>
                   <div className="py-6">
                     <Label htmlFor="sku-select" className='mb-2 block'>SKU</Label>
-                     <Popover open={isComboboxOpen} onOpenChange={setIsComboboxOpen}>
-                        <PopoverTrigger asChild>
-                            <Button
-                            variant="outline"
-                            role="combobox"
-                            aria-expanded={isComboboxOpen}
-                            className="w-full justify-between"
-                            >
-                            {skuCode
-                                ? allSkus.find((sku) => sku.skuCode === skuCode)?.skuName
-                                : "Select SKU..."}
-                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                            </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-full p-0">
-                            <Command>
-                            <CommandInput placeholder="Search SKU..." />
-                            <CommandList>
-                                <CommandEmpty>No SKU found.</CommandEmpty>
-                                <CommandGroup>
-                                {allSkus.map((sku) => (
-                                    <CommandItem
-                                    key={sku.id}
-                                    value={sku.skuCode}
-                                    onSelect={(currentValue) => {
-                                        setSkuCode(currentValue === skuCode ? "" : currentValue)
-                                        setIsComboboxOpen(false)
-                                    }}
-                                    >
-                                    <Check
-                                        className={cn(
-                                        "mr-2 h-4 w-4",
-                                        skuCode === sku.skuCode ? "opacity-100" : "opacity-0"
-                                        )}
-                                    />
-                                    {sku.skuName} ({sku.skuCode})
-                                    </CommandItem>
-                                ))}
-                                </CommandGroup>
-                            </CommandList>
-                            </Command>
-                        </PopoverContent>
-                    </Popover>
+                    <SearchableSelect
+                      options={allSkus.map((sku) => ({
+                        id: sku.id,
+                        label: `${sku.skuName} (${sku.skuCode})`,
+                        value: sku.skuCode,
+                      }))}
+                      value={skuCode}
+                      onChange={setSkuCode}
+                      placeholder="Select SKU..."
+                      searchPlaceholder="Search SKU by name or code..."
+                      emptyText="No SKU found."
+                      pageSize={50}
+                    />
                   </div>
                   <DialogFooter>
                     <Button
@@ -1027,4 +1123,5 @@ export default function StockOpnamePage() {
   }
 
     
+
     
