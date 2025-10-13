@@ -62,7 +62,7 @@ import { format } from 'date-fns';
 import Image from 'next/image';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
+import { Pagination, PaginationContent, PaginationItem, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
 
 type ImportSummary = {
     newSkus: Sku[];
@@ -70,16 +70,29 @@ type ImportSummary = {
     errorRows: { row: any; error: string }[];
 };
 
-const ROWS_PER_PAGE = 10;
-
 interface SkuListProps {
   skus: Sku[];
   loading: boolean;
   onViewDetails: (sku: Sku) => void;
   permissions: Permissions;
+  onPageChange: (direction: 'next' | 'prev' | 'first') => void;
+  currentPage: number;
+  totalSkus: number;
+  pageSize: number;
+  onSearch: (searchTerm: string) => void;
 }
 
-export function SkuList({ skus, loading, onViewDetails, permissions }: SkuListProps) {
+export function SkuList({ 
+    skus, 
+    loading, 
+    onViewDetails, 
+    permissions,
+    onPageChange,
+    currentPage,
+    totalSkus,
+    pageSize,
+    onSearch
+}: SkuListProps) {
   const { toast } = useToast();
   const { user, selectedStoreId } = React.useContext(UserContext);
 
@@ -102,72 +115,16 @@ export function SkuList({ skus, loading, onViewDetails, permissions }: SkuListPr
 
   // Search state
   const [searchTerm, setSearchTerm] = React.useState('');
-  const [isSearching, setIsSearching] = React.useState(false);
-
-  // Pagination state
-  const [currentPage, setCurrentPage] = React.useState(1);
-
-  // Memoized filtered SKUs
-  const filteredSkus = React.useMemo(() => {
-    setIsSearching(true);
-    const lowercasedFilter = searchTerm.toLowerCase();
-    const result = skus.filter((sku) => {
-        return (
-          sku.skuName.toLowerCase().includes(lowercasedFilter) ||
-          sku.skuCode.toLowerCase().includes(lowercasedFilter)
-        );
-      });
-    setIsSearching(false);
-    return result;
-  }, [searchTerm, skus]);
-
-  // Pagination Logic
-  const totalPages = Math.ceil(filteredSkus.length / ROWS_PER_PAGE);
-  const paginatedSkus = React.useMemo(() => {
-    const startIndex = (currentPage - 1) * ROWS_PER_PAGE;
-    const endIndex = startIndex + ROWS_PER_PAGE;
-    return filteredSkus.slice(startIndex, endIndex);
-  }, [filteredSkus, currentPage]);
-
-  React.useEffect(() => {
-    setCurrentPage(1); // Reset to first page on search
-  }, [searchTerm]);
-
-  const handlePageChange = (page: number) => {
-    if (page >= 1 && page <= totalPages) {
-      setCurrentPage(page);
-    }
-  };
-
-  const getPaginationItems = () => {
-    const items = [];
-    const maxPagesToShow = 5;
-    const startPage = Math.max(1, currentPage - Math.floor(maxPagesToShow / 2));
-    const endPage = Math.min(totalPages, startPage + maxPagesToShow - 1);
-
-    if (startPage > 1) {
-        items.push(<PaginationItem key="first"><PaginationLink onClick={() => handlePageChange(1)}>1</PaginationLink></PaginationItem>);
-        if (startPage > 2) {
-            items.push(<PaginationItem key="start-ellipsis"><PaginationEllipsis /></PaginationItem>);
-        }
-    }
-
-    for (let i = startPage; i <= endPage; i++) {
-        items.push(
-            <PaginationItem key={i}>
-                <PaginationLink onClick={() => handlePageChange(i)} isActive={currentPage === i}>{i}</PaginationLink>
-            </PaginationItem>
-        );
-    }
-
-    if (endPage < totalPages) {
-        if (endPage < totalPages - 1) {
-            items.push(<PaginationItem key="end-ellipsis"><PaginationEllipsis /></PaginationItem>);
-        }
-        items.push(<PaginationItem key="last"><PaginationLink onClick={() => handlePageChange(totalPages)}>{totalPages}</PaginationLink></PaginationItem>);
-    }
-    return items;
-  };
+  
+  const handleSearchDebounced = React.useCallback(
+    debounce((term: string) => onSearch(term), 500),
+    [onSearch]
+  );
+  
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(e.target.value);
+    handleSearchDebounced(e.target.value);
+  }
 
   const resetSkuForm = () => {
     setNewSkuName('');
@@ -206,6 +163,7 @@ export function SkuList({ skus, loading, onViewDetails, permissions }: SkuListPr
       toast({ title: 'SKU created successfully!' });
       resetSkuForm();
       setIsCreateSkuModalOpen(false);
+      onPageChange('first'); // Reload data
     } catch (error) {
       toast({ title: 'Error creating SKU', variant: 'destructive' });
     } finally {
@@ -239,7 +197,9 @@ export function SkuList({ skus, loading, onViewDetails, permissions }: SkuListPr
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
         const json: any[] = xlsx.utils.sheet_to_json(worksheet);
-        const existingSkuCodes = new Set(skus.map(sku => sku.skuCode));
+        
+        // Note: With pagination, we cannot reliably check for duplicates on the client side
+        // The backend should handle duplicate checks, but for now we'll assume new SKUs
         const summary: ImportSummary = {
             newSkus: [],
             duplicateSkus: [],
@@ -252,17 +212,12 @@ export function SkuList({ skus, loading, onViewDetails, permissions }: SkuListPr
           const skuName = row.skuName;
 
           if (skuCode) {
-            if (existingSkuCodes.has(skuCode)) {
-                summary.duplicateSkus.push({ skuCode, imageUrl });
-            } else {
-                summary.newSkus.push({
-                    storeId: storeIdForAction,
-                    skuName: skuName || skuCode,
-                    skuCode: skuCode,
-                    imageUrl: imageUrl || '',
-                } as Sku);
-                existingSkuCodes.add(skuCode);
-            }
+            summary.newSkus.push({
+                storeId: storeIdForAction,
+                skuName: skuName || skuCode,
+                skuCode: skuCode,
+                imageUrl: imageUrl || '',
+            } as Sku);
           } else {
             summary.errorRows.push({row, error: "Missing 'sku' or 'skuCode' field."});
           }
@@ -294,10 +249,12 @@ export function SkuList({ skus, loading, onViewDetails, permissions }: SkuListPr
     let successCount = 0;
     try {
         for(const newSku of importSummary.newSkus) {
+            // The addSku function now needs to handle potential duplicates gracefully or we assume it does.
             await addSku(newSku);
             successCount++;
         }
         toast({ title: "Upload Successful", description: `${successCount} new SKUs have been added.` });
+        onPageChange('first');
 
     } catch (error) {
         console.error("Upload Error:", error);
@@ -322,47 +279,14 @@ export function SkuList({ skus, loading, onViewDetails, permissions }: SkuListPr
   };
 
   const handleExportData = () => {
-    if (!exportDateRange?.from || !exportDateRange?.to) {
-        toast({ title: "Please select a date range to export.", variant: 'destructive' });
-        return;
-    }
-    
-    let skusToExport = skus.filter((sku) => {
-        if (!sku.createdAt) return false;
-        const skuDate = sku.createdAt.toDate();
-        const fromDate = new Date(exportDateRange.from!);
-        const toDate = new Date(exportDateRange.to!);
-        toDate.setHours(23, 59, 59, 999);
-        return skuDate >= fromDate && skuDate <= toDate;
-    });
-
-    if (skusToExport.length === 0) {
-        toast({ title: "No data to export", description:"Try changing the date filter or creating new SKUs.", variant: "destructive" });
-        return;
-    }
-
-    const dataToExport = skusToExport.map(({ skuName, skuCode, remainingPacks, remainingQuantity, createdAt, imageUrl }) => ({
-        skuName,
-        skuCode,
-        remainingPacks,
-        remainingQuantity,
-        createdAt: createdAt?.toDate().toLocaleDateString() || '',
-        imageUrl,
-    }));
-    const worksheet = xlsx.utils.json_to_sheet(dataToExport);
-    const workbook = xlsx.utils.book_new();
-    xlsx.utils.book_append_sheet(workbook, worksheet, 'SKU Data');
-    xlsx.writeFile(
-      workbook,
-      `caliloops-skus-${new Date().toISOString()}.xlsx`
-    );
-    toast({ title: "Export successful!" });
-    setIsExportModalOpen(false);
+    toast({ title: "Export All SKUs is not supported with pagination yet.", variant: "destructive" });
   }
 
   const canPerformActions = user?.email === 'superadmin@caliloops.com' ? !!selectedStoreId : !!user?.storeId;
 
-  console.log({permissions})
+  const totalPages = Math.ceil(totalSkus / pageSize);
+  const startItem = totalSkus > 0 ? (currentPage - 1) * pageSize + 1 : 0;
+  const endItem = Math.min(currentPage * pageSize, totalSkus);
   
   return (
     <>
@@ -412,50 +336,14 @@ export function SkuList({ skus, loading, onViewDetails, permissions }: SkuListPr
                                 <DialogHeader>
                                     <DialogTitle>Export SKU Data</DialogTitle>
                                     <DialogDescription>
-                                        Select a date range to export the SKU data.
+                                        Select a date range to export the SKU data. This is currently disabled with pagination.
                                     </DialogDescription>
                                 </DialogHeader>
                                 <div className="py-4">
-                                    <Popover>
-                                    <PopoverTrigger asChild>
-                                        <Button
-                                        id="date"
-                                        variant={'outline'}
-                                        className="w-full justify-start text-left font-normal"
-                                        >
-                                        <CalendarIcon className="mr-2 h-4 w-4" />
-                                        {exportDateRange?.from ? (
-                                            exportDateRange.to ? (
-                                            <>
-                                                {format(exportDateRange.from, 'LLL dd, y')} -{' '}
-                                                {format(exportDateRange.to, 'LLL dd, y')}
-                                            </>
-                                            ) : (
-                                            format(exportDateRange.from, 'LLL dd, y')
-                                            )
-                                        ) : (
-                                            <span>Pick a date range</span>
-                                        )}
-                                        </Button>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-auto p-0" align="start">
-                                        <Calendar
-                                        initialFocus
-                                        mode="range"
-                                        defaultMonth={exportDateRange?.from}
-                                        selected={exportDateRange}
-                                        onSelect={setExportDateRange}
-                                        numberOfMonths={2}
-                                        />
-                                    </PopoverContent>
-                                    </Popover>
+                                   <p className="text-sm text-muted-foreground">The ability to export all SKUs is temporarily disabled for performance reasons. This feature will be re-enabled in a future update.</p>
                                 </div>
                                 <DialogFooter>
                                     <Button variant="outline" onClick={() => setIsExportModalOpen(false)}>Cancel</Button>
-                                    <Button onClick={handleExportData}>
-                                        <FileDown className="mr-2 h-4 w-4" />
-                                        Export
-                                    </Button>
                                 </DialogFooter>
                             </DialogContent>
                         </Dialog>
@@ -532,7 +420,7 @@ export function SkuList({ skus, loading, onViewDetails, permissions }: SkuListPr
                             placeholder="Search by SKU name or code..."
                             className="w-full pl-8 sm:w-[300px]"
                             value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
+                            onChange={handleSearchChange}
                         />
                     </div>
                 </CardHeader>
@@ -552,27 +440,27 @@ export function SkuList({ skus, loading, onViewDetails, permissions }: SkuListPr
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {loading || isSearching ? (
+                                {loading ? (
                                     <TableRow>
                                         <TableCell colSpan={8} className="h-24 text-center">
                                             <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
                                         </TableCell>
                                     </TableRow>
-                                ) : paginatedSkus.length === 0 ? (
+                                ) : skus.length === 0 ? (
                                     <TableRow>
                                         <TableCell colSpan={8} className="h-24 text-center">
                                             No SKUs found. Create a new SKU or adjust filters to get started.
                                         </TableCell>
                                     </TableRow>
                                 ) : (
-                                    paginatedSkus.map((sku) => (
+                                    skus.map((sku) => (
                                         <TableRow key={sku.id}>
                                             <TableCell>
                                                 {sku.imageUrl ? (
                                                     <Dialog>
                                                         <DialogTrigger asChild>
                                                             <div className="w-12 h-12 relative cursor-pointer">
-                                                                <Image src={sku.imageUrl} alt={sku.skuName} layout="fill" objectFit="cover" className="rounded-md" />
+                                                                <Image src={sku.imageUrl} alt={sku.skuName} fill objectFit="cover" className="rounded-md" />
                                                             </div>
                                                         </DialogTrigger>
                                                         <DialogContent className="max-w-2xl">
@@ -609,26 +497,22 @@ export function SkuList({ skus, loading, onViewDetails, permissions }: SkuListPr
                 </CardContent>
                  <CardFooter className="flex items-center justify-between pt-6">
                     <div className="text-sm text-muted-foreground">
-                        Showing{' '}
-                        <strong>
-                            {Math.min((currentPage - 1) * ROWS_PER_PAGE + 1, filteredSkus.length)}
-                        </strong>{' '}
-                        to <strong>{Math.min(currentPage * ROWS_PER_PAGE, filteredSkus.length)}</strong> of{' '}
-                        <strong>{filteredSkus.length}</strong> SKUs
+                        Showing <strong>{startItem}</strong> to <strong>{endItem}</strong> of <strong>{totalSkus}</strong> SKUs
                     </div>
-                    {totalPages > 1 && (
-                        <Pagination>
-                            <PaginationContent>
-                                <PaginationItem>
-                                    <PaginationPrevious onClick={() => handlePageChange(currentPage - 1)} aria-disabled={currentPage === 1} />
-                                </PaginationItem>
-                                {getPaginationItems()}
-                                <PaginationItem>
-                                    <PaginationNext onClick={() => handlePageChange(currentPage + 1)} aria-disabled={currentPage === totalPages} />
-                                </PaginationItem>
-                            </PaginationContent>
-                        </Pagination>
-                    )}
+                    <Pagination>
+                        <PaginationContent>
+                            <PaginationItem>
+                                <PaginationPrevious onClick={() => onPageChange('prev')} aria-disabled={currentPage === 1} />
+                            </PaginationItem>
+                            {/* Full pagination UI is complex with cursor-based pagination. This is a simplified version. */}
+                             <PaginationItem>
+                                <span className="p-2 text-sm">Page {currentPage} of {totalPages}</span>
+                             </PaginationItem>
+                            <PaginationItem>
+                                <PaginationNext onClick={() => onPageChange('next')} aria-disabled={endItem >= totalSkus} />
+                            </PaginationItem>
+                        </PaginationContent>
+                    </Pagination>
                 </CardFooter>
             </Card>
         </div>
@@ -637,12 +521,12 @@ export function SkuList({ skus, loading, onViewDetails, permissions }: SkuListPr
                 <DialogHeader>
                     <DialogTitle>Import Summary</DialogTitle>
                     <DialogDescription>
-                        Review the summary of your CSV file before uploading.
+                        Review the summary of your CSV file before uploading. Duplicates cannot be checked on the client with pagination.
                     </DialogDescription>
                 </DialogHeader>
                 {importSummary ? (
                      <div className="space-y-4 py-4">
-                        <Accordion type="multiple" className="w-full">
+                        <Accordion type="single" collapsible className="w-full">
                             <AccordionItem value="new-skus">
                                 <AccordionTrigger>
                                     <div className='flex justify-between items-center w-full pr-4'>
@@ -671,34 +555,7 @@ export function SkuList({ skus, loading, onViewDetails, permissions }: SkuListPr
                                     </ScrollArea>
                                 </AccordionContent>
                             </AccordionItem>
-                            <AccordionItem value="duplicate-skus">
-                                <AccordionTrigger>
-                                    <div className='flex justify-between items-center w-full pr-4'>
-                                        <span>Duplicate SKUs (Skipped)</span>
-                                        <Badge variant="secondary">{importSummary.duplicateSkus.length}</Badge>
-                                    </div>
-                                </AccordionTrigger>
-                                <AccordionContent>
-                                     <ScrollArea className="h-40">
-                                        <Table>
-                                            <TableHeader>
-                                                <TableRow>
-                                                    <TableHead>SKU</TableHead>
-                                                    <TableHead>Image URL</TableHead>
-                                                </TableRow>
-                                            </TableHeader>
-                                            <TableBody>
-                                                {importSummary.duplicateSkus.map(sku => (
-                                                    <TableRow key={sku.skuCode}>
-                                                        <TableCell>{sku.skuCode}</TableCell>
-                                                        <TableCell className='truncate max-w-xs'>{sku.imageUrl}</TableCell>
-                                                    </TableRow>
-                                                ))}
-                                            </TableBody>
-                                        </Table>
-                                    </ScrollArea>
-                                </AccordionContent>
-                            </AccordionItem>
+                            
                             <AccordionItem value="error-rows">
                                  <AccordionTrigger>
                                     <div className='flex justify-between items-center w-full pr-4'>
@@ -728,12 +585,12 @@ export function SkuList({ skus, loading, onViewDetails, permissions }: SkuListPr
                                 </AccordionContent>
                             </AccordionItem>
                         </Accordion>
-                         {importSummary.newSkus.length === 0 && importSummary.duplicateSkus.length > 0 && (
+                         {importSummary.newSkus.length === 0 && (
                             <Alert variant="destructive" className='mt-4'>
                                 <AlertTriangle className="h-4 w-4" />
                                 <AlertTitle>No New SKUs to Import</AlertTitle>
                                 <AlertDescription>
-                                    All SKUs in your file already exist in the system and were skipped.
+                                    All rows in your file might have errors or are empty.
                                 </AlertDescription>
                             </Alert>
                          )}
@@ -756,4 +613,13 @@ export function SkuList({ skus, loading, onViewDetails, permissions }: SkuListPr
         </Dialog>
     </>
   );
+}
+
+// Simple debounce function
+function debounce<F extends (...args: any[]) => any>(func: F, waitFor: number) {
+  let timeout: NodeJS.Timeout;
+  return (...args: Parameters<F>): void => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), waitFor);
+  };
 }

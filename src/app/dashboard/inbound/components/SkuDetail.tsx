@@ -121,6 +121,8 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
     const [pdfBarcodes, setPdfBarcodes] = React.useState<BarcodeType[]>([]);
     const [loadingPdfBarcodes, setLoadingPdfBarcodes] = React.useState(false);
     const [printContext, setPrintContext] = React.useState<PrintContextType | null>(null);
+    const [isGeneratingPdf, setIsGeneratingPdf] = React.useState(false);
+
 
     // Reprint Confirmation Modal
     const [isReprintConfirmOpen, setIsReprintConfirmOpen] = React.useState(false);
@@ -131,6 +133,18 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
         filename: pdfFilename,
         page: { margin: 1, format: [20, 50], orientation: 'landscape' }
     });
+
+    const handleGeneratePdf = async () => {
+        setIsGeneratingPdf(true);
+        try {
+            await toPDF();
+        } catch (error) {
+            toast({ title: "Failed to generate PDF.", variant: "destructive" });
+        } finally {
+            setIsGeneratingPdf(false);
+        }
+    };
+
 
     const fetchSkuDetails = React.useCallback(async (skuToFetch: Sku) => {
         setLoadingSkuDetails(true);
@@ -362,7 +376,7 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
             setPdfBarcodes(barcodesToPrint);
 
             if (unprintedBarcodeIds.length > 0) {
-                await markBarcodesAsPrinted(unprintedBarcodeIds);
+                await markBarcodesAsPrinted(unprintedBarcodeIds, storeIdForAction);
                 toast({ title: `${unprintedBarcodeIds.length} barcode(s) marked as printed.` });
             }
 
@@ -788,9 +802,9 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
                     )}
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setIsPdfPrintModalOpen(false)}>Close</Button>
-                        <Button onClick={() => toPDF()} disabled={loadingPdfBarcodes || pdfBarcodes.length === 0}>
-                            <Download className="mr-2 h-4 w-4"/>
-                            Download PDF
+                        <Button onClick={handleGeneratePdf} disabled={loadingPdfBarcodes || pdfBarcodes.length === 0 || isGeneratingPdf}>
+                            {isGeneratingPdf ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4"/>}
+                            {isGeneratingPdf ? 'Generating...' : 'Download PDF'}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

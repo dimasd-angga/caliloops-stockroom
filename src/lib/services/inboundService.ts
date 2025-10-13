@@ -145,6 +145,8 @@ export const getShipmentsBySku = async (skuId: string): Promise<InboundShipment[
     // Get all pack IDs from all shipments
     const packIds = shipments.flatMap(s => s.packs.map(p => p.id));
     
+    // console.log("[DEBUG] Pack IDs to query for barcodes:", packIds);
+    
     if (packIds.length === 0) {
         return shipments;
     }
@@ -152,18 +154,23 @@ export const getShipmentsBySku = async (skuId: string): Promise<InboundShipment[
     // Fetch all barcodes for these packs in a single query
     const barcodesQuery = query(barcodesCollection, where('packId', 'in', packIds));
     const barcodeSnapshot = await getDocs(barcodesQuery);
+    
+    // console.log(`[DEBUG] Found ${barcodeSnapshot.size} barcodes for the given pack IDs.`);
+    
     const barcodesMap = new Map<string, Barcode>();
     barcodeSnapshot.forEach(doc => {
         const barcode = { id: doc.id, ...doc.data() } as Barcode;
         barcodesMap.set(barcode.packId, barcode);
     });
     
+    // console.log("[DEBUG] Barcodes Map:", barcodesMap);
+    
     // Attach barcodeId and status to each pack
     shipments.forEach(shipment => {
         shipment.packs.forEach(pack => {
             const barcode = barcodesMap.get(pack.id);
             if (barcode) {
-                pack.barcodeId = barcode.id;
+                pack.barcodeId = barcode.id; // The document ID of the barcode
                 pack.status = barcode.status; // Sync pack status with barcode status
                 pack.isPrinted = barcode.isPrinted;
             }
@@ -264,27 +271,29 @@ export const getBarcodesBySkuCode = async (skuCode: string, storeId: string): Pr
     return enrichBarcodesWithShipmentData(barcodes);
 }
 
-export const getBarcodesByBarcodeIds = async (barcodeIds: string[], storeId: string): Promise<Barcode[]> => {
-    if (barcodeIds.length === 0) return [];
+export const getBarcodesByBarcodeIds = async (barcodeDocumentIds: string[], storeId: string): Promise<Barcode[]> => {
+    if (barcodeDocumentIds.length === 0) return [];
     
     // Firestore 'in' queries are limited to 30 values.
     const chunks: string[][] = [];
-    for (let i = 0; i < barcodeIds.length; i += 30) {
-        chunks.push(barcodeIds.slice(i, i + 30));
+    for (let i = 0; i < barcodeDocumentIds.length; i += 30) {
+        chunks.push(barcodeDocumentIds.slice(i, i + 30));
     }
     
     const results: Barcode[] = [];
     
     for (const chunk of chunks) {
-        // Corrected Query: Use 'barcodeID' field instead of documentId()
         const q = query(
             barcodesCollection, 
-            where('barcodeID', 'in', chunk),
-            where('storeId', '==', storeId)
+            where(documentId(), 'in', chunk)
         );
         const querySnapshot = await getDocs(q);
+        // Client-side filter for storeId after fetching
         querySnapshot.forEach(doc => {
-            results.push({ id: doc.id, ...doc.data() } as Barcode);
+            const data = doc.data() as Barcode;
+            if (data.storeId === storeId) {
+                results.push({ id: doc.id, ...data });
+            }
         });
     }
 
@@ -387,15 +396,24 @@ export const updateBarcode = async (id: string, barcodeUpdate: Partial<Omit<Barc
     });
 };
 
-export const markBarcodesAsPrinted = async (barcodeIds: string[]) => {
+export const markBarcodesAsPrinted = async (barcodeIds: string[], storeId: string) => {
     if (barcodeIds.length === 0) return;
 
-    const batch = writeBatch(firestore);
-    barcodeIds.forEach(id => {
-        const barcodeRef = doc(barcodesCollection, id);
-        batch.update(barcodeRef, { isPrinted: true });
+    // Use a transaction to ensure atomicity and security
+    await runTransaction(firestore, async (transaction) => {
+        for (const id of barcodeIds) {
+            const barcodeRef = doc(barcodesCollection, id);
+            const barcodeDoc = await transaction.get(barcodeRef);
+
+            if (!barcodeDoc.exists() || barcodeDoc.data().storeId !== storeId) {
+                // If a barcode doesn't exist or doesn't belong to the user's store, throw an error.
+                // This prevents users from marking barcodes in other stores as printed.
+                throw new Error(`Permission denied or barcode not found: ${id}`);
+            }
+            
+            transaction.update(barcodeRef, { isPrinted: true });
+        }
     });
-    await batch.commit();
 };
 
 

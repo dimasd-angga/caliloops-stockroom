@@ -14,40 +14,54 @@ import {
   QueryConstraint,
   getDocs,
   limit,
+  startAfter,
+  getDoc,
+  DocumentSnapshot,
+  DocumentData,
+  setDoc,
+  getCountFromServer,
 } from 'firebase/firestore';
-import type { Sku } from '../types';
+import type { Sku, Store } from '../types';
 
 const skusCollection = collection(firestore, 'skus');
+const storeSummariesCollection = collection(firestore, 'storeSummaries');
 
-export const subscribeToSkus = (
-  storeId: string | null, // Can be null for superadmin to see all
-  callback: (skus: Sku[]) => void,
-  onError: (error: Error) => void
+export const getPaginatedSkus = async (
+  storeId: string,
+  pageSize: number,
+  searchTerm: string = '',
+  startAfterDoc: DocumentSnapshot<DocumentData> | null = null
 ) => {
-  const constraints: QueryConstraint[] = [orderBy('createdAt', 'desc')];
-  // If a specific storeId is provided, add a where clause.
-  // If storeId is null, the query will not be filtered by store, fetching all documents.
-  if (storeId) {
-    constraints.push(where('storeId', '==', storeId));
+  const baseConstraints: QueryConstraint[] = [where('storeId', '==', storeId)];
+  
+  if (searchTerm) {
+    const endAt = searchTerm + '\uf8ff';
+    baseConstraints.push(where('skuCode', '>=', searchTerm));
+    baseConstraints.push(where('skuCode', '<=', endAt));
   }
 
-  const q = query(skusCollection, ...constraints);
+  // Query for the total count
+  const countQuery = query(skusCollection, ...baseConstraints);
+  const countSnapshot = await getCountFromServer(countQuery);
+  const totalCount = countSnapshot.data().count;
+  
+  // Query for the paginated documents
+  const docConstraints: QueryConstraint[] = [...baseConstraints, orderBy('createdAt', 'desc')];
+  if (startAfterDoc) {
+    docConstraints.push(startAfter(startAfterDoc));
+  }
+  docConstraints.push(limit(pageSize));
 
-  const unsubscribe = onSnapshot(
-    q,
-    (snapshot) => {
-      const skus = snapshot.docs.map(
-        (doc) => ({ id: doc.id, ...doc.data() } as Sku)
-      );
-      callback(skus);
-    },
-    (error) => {
-      console.error('Error subscribing to SKUs: ', error);
-      onError(error);
-    }
-  );
+  const docsQuery = query(skusCollection, ...docConstraints);
+  const snapshot = await getDocs(docsQuery);
 
-  return unsubscribe;
+  const skus = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Sku));
+  
+  return {
+    skus,
+    last: snapshot.docs[snapshot.docs.length - 1] || null,
+    totalCount: totalCount,
+  };
 };
 
 export const checkSkuExists = async (skuCode: string, storeId: string): Promise<boolean> => {
@@ -71,6 +85,17 @@ export const addSku = async (
     createdAt: Timestamp.now(),
   };
   const docRef = await addDoc(skusCollection, newSku);
+  
+  // Optional: You can still keep the summary collection for other purposes if needed
+  // by uncommenting the code below and setting up the Cloud Function.
+  // const summaryDocRef = doc(storeSummariesCollection, skuData.storeId);
+  // const summaryDoc = await getDoc(summaryDocRef);
+  // if (summaryDoc.exists()) {
+  //     await updateDoc(summaryDocRef, { skuCount: increment(1) });
+  // } else {
+  //     await setDoc(summaryDocRef, { skuCount: 1 });
+  // }
+
   return docRef.id;
 };
 
@@ -90,3 +115,32 @@ export const updateSkuDetails = async (skuId: string, data: Partial<Sku>) => {
     const { id, skuCode, ...updateData } = data; // Prevent skuCode from being updated
     await updateDoc(skuRef, updateData);
 };
+
+export const subscribeToSkus = (
+    storeId: string | null,
+    callback: (skus: Sku[]) => void,
+    onError: (error: Error) => void
+  ) => {
+    const constraints: QueryConstraint[] = [orderBy('createdAt', 'desc')];
+    if (storeId) {
+      constraints.push(where('storeId', '==', storeId));
+    }
+  
+    const q = query(skusCollection, ...constraints);
+  
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const skus = snapshot.docs.map(
+          (doc) => ({ id: doc.id, ...doc.data() } as Sku)
+        );
+        callback(skus);
+      },
+      (error) => {
+        console.error('Error subscribing to skus: ', error);
+        onError(error);
+      }
+    );
+  
+    return unsubscribe;
+  };

@@ -56,6 +56,7 @@ export type Store = {
   name: string;
   location: string;
   createdAt: Timestamp;
+  skuCount?: number;
 };
 
 export type User = {
