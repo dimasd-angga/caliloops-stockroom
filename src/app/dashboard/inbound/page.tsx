@@ -24,74 +24,102 @@ export default function InboundPage() {
   const [searchTerm, setSearchTerm] = React.useState('');
   
   const PAGE_SIZE = 10;
-
+  
+  // Effect for fetching data when filters or page change
   React.useEffect(() => {
-    // This effect handles loading data when the store or search term changes.
-    // It resets pagination and fetches the first page.
-    setCurrentPage(1);
-    setPageCursors([null]);
-    loadSkus(1, searchTerm, true); // `true` to indicate it's a fresh load/reset
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedStoreId, searchTerm]);
+    const fetchFirstPage = async () => {
+      setLoadingSkus(true);
+      setCurrentPage(1);
+      setPageCursors([null]);
 
-  const loadSkus = React.useCallback(async (page: number, search: string, isReset: boolean = false) => {
-    setLoadingSkus(true);
-    const storeIdToQuery = user?.email === 'superadmin@caliloops.com' ? selectedStoreId : user?.storeId || null;
+      const storeIdToQuery = user?.email === 'superadmin@caliloops.com' ? selectedStoreId : user?.storeId || null;
 
-    if (!storeIdToQuery) {
-      setSkus([]);
-      setTotalSkus(0);
-      setLoadingSkus(false);
-      return;
-    }
-
-    try {
-      // Use the cursor for the page we are navigating to.
-      // If it's a reset, the cursor is null.
-      const startAfterDoc = isReset ? null : pageCursors[page - 1];
-      
-      const { skus: fetchedSkus, last, totalCount } = await getPaginatedSkus(storeIdToQuery, PAGE_SIZE, search, startAfterDoc);
-      
-      setSkus(fetchedSkus);
-      setTotalSkus(totalCount);
-
-      // Store the cursor for the *next* page
-      if (last) {
-        setPageCursors(prev => {
-            const newCursors = [...prev];
-            newCursors[page] = last; // page is 1-based, so this sets the cursor for page 2
-            return newCursors;
-        });
+      if (!storeIdToQuery) {
+        setSkus([]);
+        setTotalSkus(0);
+        setLoadingSkus(false);
+        return;
       }
 
-    } catch (error: any) {
-      console.error("Error fetching SKUs:", error);
-      toast({
-        title: 'Error fetching SKUs',
-        description: error.message,
-        variant: 'destructive',
-      });
-      setSkus([]);
-      setTotalSkus(0);
-    } finally {
-      setLoadingSkus(false);
-    }
-  }, [user, selectedStoreId, toast, pageCursors, PAGE_SIZE]);
+      try {
+        const { skus: fetchedSkus, last, totalCount } = await getPaginatedSkus(storeIdToQuery, PAGE_SIZE, searchTerm, null);
+        
+        setSkus(fetchedSkus);
+        setTotalSkus(totalCount);
+        
+        setPageCursors(prev => {
+            const newCursors = [null]; // Reset cursors
+            if (last) {
+              newCursors[1] = last;
+            }
+            return newCursors;
+        });
+
+      } catch (error: any) {
+        toast({ title: 'Error fetching SKUs', description: error.message, variant: 'destructive' });
+        setSkus([]);
+        setTotalSkus(0);
+      } finally {
+        setLoadingSkus(false);
+      }
+    };
+    
+    fetchFirstPage();
+  }, [selectedStoreId, searchTerm, user, toast]);
+
+  // Effect for handling page navigation (next/prev)
+  React.useEffect(() => {
+    if (currentPage === 1) return; // This is handled by the effect above
+
+    const loadSkusForPage = async () => {
+      setLoadingSkus(true);
+      const storeIdToQuery = user?.email === 'superadmin@caliloops.com' ? selectedStoreId : user?.storeId || null;
+
+      if (!storeIdToQuery) {
+          setLoadingSkus(false);
+          return;
+      }
+
+      try {
+        const startAfterDoc = pageCursors[currentPage - 1] || null;
+        
+        const { skus: fetchedSkus, last, totalCount } = await getPaginatedSkus(storeIdToQuery, PAGE_SIZE, searchTerm, startAfterDoc);
+        
+        setSkus(fetchedSkus);
+        setTotalSkus(totalCount); // Keep total updated
+
+        if (last && pageCursors.length <= currentPage) {
+          setPageCursors(prev => {
+              const newCursors = [...prev];
+              newCursors[currentPage] = last;
+              return newCursors;
+          });
+        }
+      } catch (error: any) {
+        toast({ title: 'Error fetching next page', description: error.message, variant: 'destructive' });
+      } finally {
+        setLoadingSkus(false);
+      }
+    };
+    
+    loadSkusForPage();
+  }, [currentPage]);
   
   const handlePageChange = (direction: 'next' | 'prev' | 'first') => {
     if (direction === 'first') {
-        setCurrentPage(1);
-        loadSkus(1, searchTerm, true); // Reset
+        if (currentPage !== 1) {
+            setCurrentPage(1);
+        }
     } else if (direction === 'next' && (currentPage * PAGE_SIZE < totalSkus)) {
-        const nextPage = currentPage + 1;
-        setCurrentPage(nextPage);
-        loadSkus(nextPage, searchTerm);
+      setCurrentPage(prev => prev + 1);
     } else if (direction === 'prev' && currentPage > 1) {
-        const prevPage = currentPage - 1;
-        setCurrentPage(prevPage);
-        loadSkus(prevPage, searchTerm);
+      setCurrentPage(prev => prev - 1);
     }
   };
+  
+  const handleSearch = (search: string) => {
+    setSearchTerm(search);
+  }
 
   const handleSkuUpdate = (updatedSku: Sku) => {
     setSelectedSku(updatedSku);
@@ -105,13 +133,10 @@ export default function InboundPage() {
 
   const handleBackToList = () => {
     setSelectedSku(null);
-    // Reload current page to reflect potential changes
-    loadSkus(currentPage, searchTerm);
+    // Trigger a re-fetch of the first page to ensure data is fresh
+    setSearchTerm(st => st ? '' : ' '); // Toggling to trigger effect
+    setSearchTerm('');
   };
-  
-  const handleSearch = (search: string) => {
-    setSearchTerm(search);
-  }
 
   if (selectedSku) {
     return <SkuDetail sku={selectedSku} onBack={handleBackToList} onSkuUpdate={handleSkuUpdate} permissions={permissions} />;

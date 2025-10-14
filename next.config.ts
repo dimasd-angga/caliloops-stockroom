@@ -37,6 +37,12 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: 'https',
+        hostname: 'ecs7.tokopedia.net',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
         hostname: 'sg-test-11.slatic.net',
         port: '',
         pathname: '/**',

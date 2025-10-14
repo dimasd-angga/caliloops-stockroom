@@ -24,7 +24,6 @@ import {
 import type { Sku, Store } from '../types';
 
 const skusCollection = collection(firestore, 'skus');
-const storeSummariesCollection = collection(firestore, 'storeSummaries');
 
 export const getPaginatedSkus = async (
   storeId: string,
@@ -46,7 +45,15 @@ export const getPaginatedSkus = async (
   const totalCount = countSnapshot.data().count;
   
   // Query for the paginated documents
-  const docConstraints: QueryConstraint[] = [...baseConstraints, orderBy('createdAt', 'desc')];
+  const docConstraints: QueryConstraint[] = [...baseConstraints];
+  
+  // Conditional orderBy. Firestore doesn't allow inequality filters on one field and orderBy on another.
+  if (searchTerm) {
+      docConstraints.push(orderBy('skuCode', 'asc'));
+  } else {
+      docConstraints.push(orderBy('createdAt', 'desc'));
+  }
+
   if (startAfterDoc) {
     docConstraints.push(startAfter(startAfterDoc));
   }
@@ -86,16 +93,6 @@ export const addSku = async (
   };
   const docRef = await addDoc(skusCollection, newSku);
   
-  // Optional: You can still keep the summary collection for other purposes if needed
-  // by uncommenting the code below and setting up the Cloud Function.
-  // const summaryDocRef = doc(storeSummariesCollection, skuData.storeId);
-  // const summaryDoc = await getDoc(summaryDocRef);
-  // if (summaryDoc.exists()) {
-  //     await updateDoc(summaryDocRef, { skuCount: increment(1) });
-  // } else {
-  //     await setDoc(summaryDocRef, { skuCount: 1 });
-  // }
-
   return docRef.id;
 };
 
