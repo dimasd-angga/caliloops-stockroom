@@ -145,42 +145,44 @@ export const getShipmentsBySku = async (skuId: string): Promise<InboundShipment[
     // Get all pack IDs from all shipments
     const packIds = shipments.flatMap(s => s.packs.map(p => p.id));
 
-    // console.log("[DEBUG] Pack IDs to query for barcodes:", packIds);
-
     if (packIds.length === 0) {
         return shipments;
     }
 
-    // Fetch all barcodes for these packs in a single query
-    const barcodesQuery = query(barcodesCollection, where('packId', 'in', packIds));
-    const barcodeSnapshot = await getDocs(barcodesQuery);
-
-    // console.log(`[DEBUG] Found ${barcodeSnapshot.size} barcodes for the given pack IDs.`);
-
+    // FIX: Batch queries in groups of 30 (Firestore 'in' limit)
+    const batchSize = 30;
     const barcodesMap = new Map<string, Barcode>();
-    barcodeSnapshot.forEach(doc => {
-        const barcode = { id: doc.id, ...doc.data() } as Barcode;
-        barcodesMap.set(barcode.packId, barcode);
-    });
 
-    // console.log("[DEBUG] Barcodes Map:", barcodesMap);
+    try {
+        for (let i = 0; i < packIds.length; i += batchSize) {
+            const batch = packIds.slice(i, i + batchSize);
+            const barcodesQuery = query(barcodesCollection, where('packId', 'in', batch));
+            const barcodeSnapshot = await getDocs(barcodesQuery);
 
-    // Attach barcodeId and status to each pack
-    shipments.forEach(shipment => {
-        shipment.packs.forEach(pack => {
-            const barcode = barcodesMap.get(pack.id);
-            if (barcode) {
-                pack.barcodeId = barcode.id; // The document ID of the barcode
-                pack.status = barcode.status; // Sync pack status with barcode status
-                pack.isPrinted = barcode.isPrinted;
-            }
+            barcodeSnapshot.forEach(doc => {
+                const barcode = { id: doc.id, ...doc.data() } as Barcode;
+                barcodesMap.set(barcode.packId, barcode);
+            });
+        }
+
+        // Attach barcodeId and status to each pack
+        shipments.forEach(shipment => {
+            shipment.packs.forEach(pack => {
+                const barcode = barcodesMap.get(pack.id);
+                if (barcode) {
+                    pack.barcodeId = barcode.id;
+                    pack.status = barcode.status;
+                    pack.isPrinted = barcode.isPrinted;
+                }
+            });
         });
-    });
+    } catch (error) {
+        console.error('Error fetching barcodes:', error);
+        // Continue without barcodes if query fails
+    }
 
     return shipments;
 }
-
-
 export const deleteShipment = async (id: string): Promise<void> => {
     // Also delete associated barcodes
     const q = query(barcodesCollection, where('inboundShipmentId', '==', id));

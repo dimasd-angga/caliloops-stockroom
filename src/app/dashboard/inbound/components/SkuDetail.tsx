@@ -152,6 +152,7 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
             const shipments = await getShipmentsBySku(skuToFetch.id);
             setSkuShipments(shipments);
         } catch (e) {
+            console.error('SKU Details Error:', e); // Add this to see the actual error
             toast({
                 title: 'Error loading SKU details',
                 description: 'Could not load shipment data for this SKU.',
