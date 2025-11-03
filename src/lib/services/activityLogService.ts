@@ -54,7 +54,7 @@ export const subscribeToAllLogs = (
         type: 'Inbound',
         sku: data.skuCode,
         storeId: data.storeId,
-        details: `Shipment received for ${data.totalQuantity} ${data.packs.length > 1 ? 'items' : 'item'} from ${data.supplier} (PO: ${data.poNumber})`,
+        details: `Shipment received for ${data.totalQuantity} ${data.packs.length > 1 ? 'items' : 'item'} from ${data.supplierName} (PO: ${data.poNumber})`,
         user: data.createdBy,
         status: 'Received',
       };

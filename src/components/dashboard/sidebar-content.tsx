@@ -21,6 +21,11 @@ import {
   Users,
   ArrowRightLeft,
   Store,
+  Truck,
+  FileText,
+  Bike,
+  DollarSign,
+  Ship,
 } from 'lucide-react';
 import { UserContext } from '@/app/dashboard/layout';
 import type { Permissions } from '@/lib/types';
@@ -37,6 +42,11 @@ export function DashboardSidebarContent() {
     { href: '/dashboard/warehouse-io', label: 'Warehouse In/Out', icon: ArrowRightLeft, requiredPermission: 'canGenerateBarcode' },
     { href: '/dashboard/stock-opname', label: 'Stock Opname', icon: ClipboardList, requiredPermission: 'canStartStockOpname' },
     { href: '/dashboard/activity-logging', label: 'Activity Logging', icon: History, requiredPermission: 'canViewActivityLogs' },
+    { href: '/dashboard/suppliers', label: 'Suppliers', icon: Truck, requiredPermission: 'canManageSuppliers' },
+    { href: '/dashboard/purchase-orders', label: 'Purchase Orders', icon: FileText, requiredPermission: 'canManagePurchaseOrders' },
+    { href: '/dashboard/couriers', label: 'Couriers', icon: Bike, requiredPermission: 'canManageCouriers' },
+    { href: '/dashboard/refunds', label: 'Refund Management', icon: DollarSign, requiredPermission: 'canManageRefunds' },
+    { href: '/dashboard/shipping', label: 'Shipping', icon: Ship, requiredPermission: 'canManageShipping' },
     { href: '/dashboard/user-access', label: 'User Access & Role', icon: Users, requiredPermission: 'canManageUsers' },
     { href: '/dashboard/stores', label: 'Store Management', icon: Store, requiredPermission: 'canManageUsers' },
   ];

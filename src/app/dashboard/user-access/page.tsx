@@ -83,6 +83,11 @@ const defaultPermissions: Permissions = {
   canViewActivityLogs: false,
   canExportLogs: false,
   canClearLogs: false,
+  canManageSuppliers: false,
+  canManagePurchaseOrders: false,
+  canManageCouriers: false,
+  canManageRefunds: false,
+  canManageShipping: false,
   hasFullAccess: false,
 };
 
@@ -105,6 +110,13 @@ const permissionCategories = {
         { id: "canViewActivityLogs", label: "Can View Activity Logs" },
         { id: "canExportLogs", label: "Can Export Logs" },
         { id: "canClearLogs", label: "Can Clear Logs (Not Implemented)" },
+    ],
+    "Master Data": [
+        { id: "canManageSuppliers", label: "Can Manage Suppliers" },
+        { id: "canManagePurchaseOrders", label: "Can Manage Purchase Orders" },
+        { id: "canManageCouriers", label: "Can Manage Couriers" },
+        { id: "canManageRefunds", label: "Can Manage Refunds" },
+        { id: "canManageShipping", label: "Can Manage Shipping" },
     ],
     "Administration": [
         { id: "canManageUsers", label: "Can Manage Users" },

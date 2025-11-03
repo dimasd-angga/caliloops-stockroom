@@ -27,7 +27,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import type { Sku, Unit, InboundShipment, Pack, Barcode as BarcodeType, StockOpnameLog, Permissions } from '@/lib/types';
+import type { Sku, Unit, InboundShipment, Pack, Barcode as BarcodeType, StockOpnameLog, Permissions, Supplier, PurchaseOrder } from '@/lib/types';
 import { updateSkuDetails } from '@/lib/services/skuService';
 import {
     addInboundShipment,
@@ -36,6 +36,8 @@ import {
     getBarcodesByBarcodeIds,
     markBarcodesAsPrinted,
 } from '@/lib/services/inboundService';
+import { subscribeToSuppliers } from '@/lib/services/supplierService';
+import { subscribeToPurchaseOrdersBySupplier } from '@/lib/services/purchaseOrderService';
 import {
     PlusCircle,
     X,
@@ -91,6 +93,8 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
     const { toast } = useToast();
     const router = useRouter();
     const { user, selectedStoreId } = React.useContext(UserContext);
+    const storeId = user?.email === 'superadmin@caliloops.com' ? selectedStoreId : user?.storeId;
+
 
     const [selectedSku, setSelectedSku] = React.useState<Sku>(initialSku);
     const [skuShipments, setSkuShipments] = React.useState<InboundShipment[]>([]);
@@ -103,8 +107,10 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
 
     // Create Shipment Modal State
     const [isCreateShipmentModalOpen, setIsCreateShipmentModalOpen] = React.useState(false);
-    const [supplier, setSupplier] = React.useState('');
-    const [poNumber, setPoNumber] = React.useState('');
+    const [suppliers, setSuppliers] = React.useState<Supplier[]>([]);
+    const [purchaseOrders, setPurchaseOrders] = React.useState<PurchaseOrder[]>([]);
+    const [selectedSupplierId, setSelectedSupplierId] = React.useState('');
+    const [selectedPurchaseOrderId, setSelectedPurchaseOrderId] = React.useState('');
     const [quantitiesPerPack, setQuantitiesPerPack] = React.useState<QuantityPack[]>([{ quantity: 0, unit: 'pcs', note: '' }]);
     const [isSavingShipment, setIsSavingShipment] = React.useState(false);
 
@@ -134,6 +140,33 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
         page: { margin: 1, format: [20, 50], orientation: 'landscape' }
     });
 
+    // Fetch suppliers for the current store
+    React.useEffect(() => {
+        if (isCreateShipmentModalOpen && storeId) {
+            const unsubscribe = subscribeToSuppliers(
+                storeId,
+                setSuppliers,
+                (err) => toast({ title: 'Error fetching suppliers', variant: 'destructive' })
+            );
+            return () => unsubscribe();
+        }
+    }, [isCreateShipmentModalOpen, storeId, toast]);
+
+    // Fetch POs when a supplier is selected
+    React.useEffect(() => {
+        if (selectedSupplierId && storeId) {
+            const unsubscribe = subscribeToPurchaseOrdersBySupplier(
+                storeId,
+                selectedSupplierId,
+                setPurchaseOrders,
+                (err) => toast({ title: 'Error fetching purchase orders', variant: 'destructive' })
+            );
+            return () => unsubscribe();
+        } else {
+            setPurchaseOrders([]);
+        }
+    }, [selectedSupplierId, storeId, toast]);
+
     const handleGeneratePdf = async () => {
         setIsGeneratingPdf(true);
         try {
@@ -152,7 +185,6 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
             const shipments = await getShipmentsBySku(skuToFetch.id);
             setSkuShipments(shipments);
         } catch (e) {
-            console.error('SKU Details Error:', e); // Add this to see the actual error
             toast({
                 title: 'Error loading SKU details',
                 description: 'Could not load shipment data for this SKU.',
@@ -246,8 +278,8 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
     };
 
     const resetShipmentForm = () => {
-        setSupplier('');
-        setPoNumber('');
+        setSelectedSupplierId('');
+        setSelectedPurchaseOrderId('');
         setQuantitiesPerPack([{ quantity: 0, unit: 'pcs', note: '' }]);
     };
 
@@ -261,20 +293,39 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
             toast({ title: "Permission Denied", variant: "destructive" });
             return;
         }
-        if (!supplier || !poNumber) {
-            toast({ title: 'Missing Fields', variant: 'destructive' });
+        if (!selectedSupplierId || !selectedPurchaseOrderId) {
+            toast({ title: 'Please select a supplier and a purchase order.', variant: 'destructive' });
             return;
         }
         const validQuantities = quantitiesPerPack.filter((q) => q.quantity > 0);
         if (validQuantities.length === 0) {
-            toast({ title: 'Invalid Quantities', variant: 'destructive' });
+            toast({ title: 'At least one pack must have a quantity greater than 0.', variant: 'destructive' });
             return;
         }
+        
+        const supplier = suppliers.find(s => s.id === selectedSupplierId);
+        const po = purchaseOrders.find(p => p.id === selectedPurchaseOrderId);
+
+        if (!supplier || !po) {
+            toast({ title: 'Selected supplier or PO not found.', variant: 'destructive' });
+            return;
+        }
+
 
         setIsSavingShipment(true);
         try {
             await addInboundShipment(
-                { storeId: selectedSku.storeId, skuId: selectedSku.id, skuName: selectedSku.skuName, skuCode: selectedSku.skuCode, supplier, poNumber, createdBy: user?.name || 'System' },
+                { 
+                    storeId: selectedSku.storeId, 
+                    skuId: selectedSku.id, 
+                    skuName: selectedSku.skuName, 
+                    skuCode: selectedSku.skuCode, 
+                    supplierId: supplier.id,
+                    supplierName: supplier.name,
+                    purchaseOrderId: po.id,
+                    poNumber: po.poNumber,
+                    createdBy: user?.name || 'System' 
+                },
                 validQuantities
             );
             toast({ title: 'Shipment and barcodes created successfully!' });
@@ -570,11 +621,21 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
                                             <div className="grid md:grid-cols-2 gap-4">
                                                 <div className="grid gap-2">
                                                     <Label htmlFor="supplier">Supplier</Label>
-                                                    <Input id="supplier" value={supplier} onChange={(e) => setSupplier(e.target.value)} required disabled={isSavingShipment}/>
+                                                    <Select value={selectedSupplierId} onValueChange={setSelectedSupplierId} required disabled={isSavingShipment}>
+                                                        <SelectTrigger id="supplier"><SelectValue placeholder="Select a supplier" /></SelectTrigger>
+                                                        <SelectContent>
+                                                            {suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                                                        </SelectContent>
+                                                    </Select>
                                                 </div>
                                                 <div className="grid gap-2">
                                                     <Label htmlFor="poNumber">PO Number</Label>
-                                                    <Input id="poNumber" value={poNumber} onChange={(e) => setPoNumber(e.target.value)} required disabled={isSavingShipment}/>
+                                                    <Select value={selectedPurchaseOrderId} onValueChange={setSelectedPurchaseOrderId} required disabled={isSavingShipment || !selectedSupplierId}>
+                                                        <SelectTrigger id="poNumber"><SelectValue placeholder="Select a PO" /></SelectTrigger>
+                                                        <SelectContent>
+                                                            {purchaseOrders.map(p => <SelectItem key={p.id} value={p.id}>{p.poNumber}</SelectItem>)}
+                                                        </SelectContent>
+                                                    </Select>
                                                 </div>
                                             </div>
                                             <Separator />
@@ -675,7 +736,7 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
                                                         </TableCell>
                                                     )}
                                                     <TableCell>{shipment.poNumber}</TableCell>
-                                                    <TableCell>{shipment.supplier}</TableCell>
+                                                    <TableCell>{shipment.supplierName}</TableCell>
                                                     <TableCell>{pack.quantity}</TableCell>
                                                     <TableCell>{pack.unit}</TableCell>
                                                     <TableCell>

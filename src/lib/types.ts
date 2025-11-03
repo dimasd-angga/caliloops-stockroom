@@ -35,11 +35,18 @@ export type Permissions = {
   // User & Role Management
   canManageUsers: boolean;
   canManageRoles: boolean;
-  
+
   // Activity & Reporting
   canViewActivityLogs: boolean;
   canExportLogs: boolean;
   canClearLogs: boolean;
+
+  // Master Data
+  canManageSuppliers: boolean;
+  canManagePurchaseOrders: boolean;
+  canManageCouriers: boolean;
+  canManageRefunds: boolean;
+  canManageShipping: boolean; // New permission
 
   // General
   hasFullAccess: boolean;
@@ -57,6 +64,17 @@ export type Store = {
   location: string;
   createdAt: Timestamp;
   skuCount?: number;
+};
+
+export type Courier = {
+  id: string;
+  name: string;
+  courierCode: string;
+  warehouseAddress: string;
+  marking: string;
+  contactPerson: string;
+  storeId: string;
+  createdAt: Timestamp;
 };
 
 export type User = {
@@ -94,7 +112,120 @@ export type Sku = {
   createdAt?: Timestamp;
   lastAuditDate?: Timestamp;
   imageUrl?: string;
+  keywords?: string[];
 }
+
+export type Supplier = {
+  id: string;
+  name: string;
+  supplierCode: string;
+  description?: string;
+  chatSearchName?: string;
+  storeId: string;
+  createdAt: Timestamp;
+}
+
+export type PurchaseOrder = {
+  id: string;
+  poNumber: string; // Auto-generated running number
+  orderNumber?: string; // Manual input
+  orderDate: Timestamp; // Manual input with date picker
+  
+  storeId: string;
+  supplierId: string;
+  supplierName: string; // Denormalized for display
+  supplierCode: string; // Denormalized for display
+  
+  chatSearch: string; // Manual text input
+  
+  totalPcs: number;
+  totalRmb: number;
+  exchangeRate: number;
+  
+  marking: string; // Selected from Courier DB
+  
+  shippingCost?: number; 
+  costPerPiece?: number;
+  
+  packageCount?: number;
+  photoUrl?: string;
+  trackingNumber: string[];
+  shippingNote?: string;
+
+  // New quantity tracking fields
+  totalPcsOldReceived?: number;
+  totalPcsNewReceived?: number;
+  totalPcsRefunded?: number;
+
+  // Statuses
+  status: 'INPUTTED' | 'SHIPPING' | 'RECEIVED' | 'DONE';
+  isStockUpdated: boolean;
+  
+  // New confirmation fields
+  isOldItemsInPurchaseMenu?: boolean;
+  isNewItemsUploaded?: boolean;
+  isNewItemsAddedToPurchase?: boolean;
+
+  // Refund - Now read-only from other systems
+  hasRefund: boolean;
+  refundAmountYuan?: number;
+  isSupplierRefundApproved: boolean;
+
+  // Timestamps
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+
+  // For frontend joins
+  supplier?: Supplier;
+};
+
+export type Refund = {
+    id: string;
+    storeId: string;
+    
+    poId: string;
+    poNumber: string;
+    orderDate: Timestamp;
+    orderNumber?: string;
+    supplierId: string;
+    supplierName: string;
+    supplierCode: string;
+    chatSearch: string;
+    
+    refundAmount: number;
+    notes?: string;
+    
+    isSupplierApproved: boolean;
+    isDeducted: boolean;
+    deductedDate?: Timestamp;
+
+    createdAt: Timestamp;
+    updatedAt: Timestamp;
+}
+
+export type Shipping = {
+    id: string;
+    storeId: string;
+    
+    marking: string;
+    kodeStorage?: string;
+    kodeKontainer?: string;
+    jumlahKoli: number;
+    noResi: string[]; // Changed from string to string[]
+    tanggalStokDiterima: Timestamp;
+    harga: number; // Shipping cost
+
+    // Auto-calculated fields
+    linkedPoNumbers: string[];
+    calculatedTotalPcs: number;
+    calculatedTotalRmb: number;
+    combinedPhotoLink?: string;
+    costPerPiece: number;
+
+    createdAt: Timestamp;
+    createdBy: string;
+}
+
 
 export type InboundShipment = {
   id:string;
@@ -102,7 +233,9 @@ export type InboundShipment = {
   skuName: string;
   skuCode: string;
   storeId: string;
-  supplier: string;
+  supplierId: string;
+  supplierName: string;
+  purchaseOrderId: string;
   poNumber: string;
   packs: Pack[];
   totalQuantity: number;
@@ -127,7 +260,7 @@ export type Barcode = {
     isPrinted: boolean;
     createdAt: Timestamp;
     updatedAt: Timestamp;
-    supplier?: string;
+    supplier?: string; // This is now supplierName
     poNumber?: string;
 };
 
