@@ -10,6 +10,9 @@ import {
   where,
   QueryConstraint,
   getDocs,
+  doc,
+  updateDoc,
+  deleteDoc,
 } from 'firebase/firestore';
 import type { Shipping } from '../types';
 
@@ -45,10 +48,10 @@ export const subscribeToShipping = (
 
 
 export const getAllShipping = async (storeId: string): Promise<Shipping[]> => {
+    if (!storeId) return [];
     const q = query(
       shippingCollection,
-      where('storeId', '==', storeId),
-      orderBy('createdAt', 'desc')
+      where('storeId', '==', storeId)
     );
     const snapshot = await getDocs(q);
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Shipping));
@@ -63,4 +66,17 @@ export const addShipping = async (
   };
   const docRef = await addDoc(shippingCollection, newShipping);
   return docRef.id;
+};
+
+export const updateShipping = async (
+    id: string,
+    shippingUpdate: Partial<Omit<Shipping, 'id' | 'createdAt'>>
+): Promise<void> => {
+    const shippingDoc = doc(firestore, 'shipping', id);
+    await updateDoc(shippingDoc, shippingUpdate);
+};
+
+export const deleteShipping = async (id: string): Promise<void> => {
+    const shippingDoc = doc(firestore, 'shipping', id);
+    await deleteDoc(shippingDoc);
 };

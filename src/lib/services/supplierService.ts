@@ -9,6 +9,9 @@ import {
   Timestamp,
   where,
   QueryConstraint,
+  doc,
+  updateDoc,
+  deleteDoc,
 } from 'firebase/firestore';
 import type { Supplier } from '../types';
 
@@ -51,4 +54,14 @@ export const addSupplier = async (
   };
   const docRef = await addDoc(suppliersCollection, newSupplier);
   return docRef.id;
+};
+
+export const updateSupplier = async (id: string, data: Partial<Omit<Supplier, 'id' | 'createdAt'>>) => {
+    const supplierDoc = doc(firestore, 'suppliers', id);
+    await updateDoc(supplierDoc, data);
+};
+
+export const deleteSupplier = async (id: string) => {
+    const supplierDoc = doc(firestore, 'suppliers', id);
+    await deleteDoc(supplierDoc);
 };

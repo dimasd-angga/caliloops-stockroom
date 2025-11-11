@@ -128,24 +128,39 @@ export default function RefundsPage() {
       toast({ title: 'Permission Denied', variant: 'destructive' });
       return;
     }
-    if (!storeId || !currentRefund || !currentRefund.poId) {
+    if (!storeId || !currentRefund) {
+        toast({ title: 'An unexpected error occurred.', variant: 'destructive' });
+        return;
+    }
+    if (!currentRefund.poId) {
       toast({ title: 'Purchase Order is required.', variant: 'destructive' });
       return;
+    }
+    // Only require refund amount if it's a new entry
+    if (!currentRefund.id && (currentRefund.refundAmount === undefined || currentRefund.refundAmount <= 0)) {
+        toast({ title: 'Refund Amount must be greater than 0.', variant: 'destructive' });
+        return;
     }
 
     setIsSaving(true);
     try {
+        const selectedPO = purchaseOrders.find(po => po.id === currentRefund.poId);
+        if (!selectedPO) {
+            toast({ title: 'Selected PO not found.', variant: 'destructive' });
+            setIsSaving(false);
+            return;
+        }
+
         if (currentRefund.id) {
+            // Update existing refund
             const { id, createdAt, poNumber, orderDate, orderNumber, supplierId, supplierName, supplierCode, chatSearch, ...updateData } = currentRefund as any;
-            await updateRefund(id, updateData);
+            await updateRefund(id, {
+                ...updateData,
+                storeId,
+            });
             toast({ title: 'Refund updated successfully!' });
         } else {
-            const selectedPO = purchaseOrders.find(po => po.id === currentRefund.poId);
-            if (!selectedPO) {
-                toast({ title: 'Selected PO not found.', variant: 'destructive' });
-                setIsSaving(false);
-                return;
-            }
+            // Add new refund
             const refundData: Omit<Refund, 'id' | 'createdAt' | 'updatedAt'> = {
                 storeId,
                 poId: selectedPO.id,

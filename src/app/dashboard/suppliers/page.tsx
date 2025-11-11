@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import type { Supplier } from '@/lib/types';
-import { subscribeToSuppliers, addSupplier } from '@/lib/services/supplierService';
+import { subscribeToSuppliers, addSupplier, updateSupplier, deleteSupplier } from '@/lib/services/supplierService';
 import {
   Dialog,
   DialogContent,
@@ -33,11 +33,19 @@ import {
   DialogFooter,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { PlusCircle, Loader2, Truck, AlertTriangle } from 'lucide-react';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+  } from '@/components/ui/dropdown-menu';
+import { PlusCircle, Loader2, Truck, AlertTriangle, MoreHorizontal, Edit, Trash2 } from 'lucide-react';
 import { UserContext } from '@/app/dashboard/layout';
 import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Textarea } from '@/components/ui/textarea';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+
 
 const ROWS_PER_PAGE = 10;
 
@@ -50,11 +58,11 @@ export default function SuppliersPage() {
   // Modal State
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
-  const [newSupplierName, setNewSupplierName] = React.useState('');
-  const [newSupplierCode, setNewSupplierCode] = React.useState('');
-  const [newDescription, setNewDescription] = React.useState('');
-  const [newChatSearchName, setNewChatSearchName] = React.useState('');
+  const [currentSupplier, setCurrentSupplier] = React.useState<Partial<Supplier> | null>(null);
 
+  // Delete Confirmation State
+  const [isDeleteAlertOpen, setIsDeleteAlertOpen] = React.useState(false);
+  const [supplierToDelete, setSupplierToDelete] = React.useState<Supplier | null>(null);
 
   // Pagination state
   const [currentPage, setCurrentPage] = React.useState(1);
@@ -87,11 +95,13 @@ export default function SuppliersPage() {
     return () => unsubscribe();
   }, [toast, storeId]);
 
-  const resetModal = () => {
-    setNewSupplierName('');
-    setNewSupplierCode('');
-    setNewDescription('');
-    setNewChatSearchName('');
+  const openModal = (supplier: Partial<Supplier> | null = null) => {
+    setCurrentSupplier(supplier || {});
+    setIsModalOpen(true);
+  };
+  
+  const closeModal = () => {
+    setCurrentSupplier(null);
     setIsModalOpen(false);
   };
 
@@ -101,7 +111,7 @@ export default function SuppliersPage() {
       toast({ title: 'Permission Denied', variant: 'destructive' });
       return;
     }
-    if (!newSupplierName || !newSupplierCode) {
+    if (!currentSupplier || !currentSupplier.name || !currentSupplier.supplierCode) {
       toast({ title: 'Supplier Name and Code are required.', variant: 'destructive' });
       return;
     }
@@ -112,19 +122,46 @@ export default function SuppliersPage() {
 
     setIsSaving(true);
     try {
-      await addSupplier({ 
-        name: newSupplierName, 
-        supplierCode: newSupplierCode,
-        description: newDescription,
-        chatSearchName: newChatSearchName,
-        storeId 
-      });
-      toast({ title: 'Supplier created successfully!' });
-      resetModal();
+        if(currentSupplier.id) {
+            await updateSupplier(currentSupplier.id, {
+                name: currentSupplier.name,
+                supplierCode: currentSupplier.supplierCode,
+                description: currentSupplier.description,
+                chatSearchName: currentSupplier.chatSearchName
+            });
+            toast({ title: 'Supplier updated successfully!' });
+        } else {
+            await addSupplier({ 
+                name: currentSupplier.name, 
+                supplierCode: currentSupplier.supplierCode,
+                description: currentSupplier.description,
+                chatSearchName: currentSupplier.chatSearchName,
+                storeId 
+              });
+              toast({ title: 'Supplier created successfully!' });
+        }
+      closeModal();
     } catch (error) {
-      toast({ title: 'Error creating supplier', variant: 'destructive' });
+      toast({ title: `Error ${currentSupplier.id ? 'updating' : 'creating'} supplier`, variant: 'destructive' });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const openDeleteDialog = (supplier: Supplier) => {
+    setSupplierToDelete(supplier);
+    setIsDeleteAlertOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!supplierToDelete) return;
+    try {
+      await deleteSupplier(supplierToDelete.id);
+      toast({ title: 'Supplier deleted successfully' });
+      setIsDeleteAlertOpen(false);
+      setSupplierToDelete(null);
+    } catch (error) {
+      toast({ title: 'Error deleting supplier', variant: 'destructive' });
     }
   };
 
@@ -191,79 +228,10 @@ export default function SuppliersPage() {
           </p>
         </div>
         {(permissions?.canManageSuppliers || permissions?.hasFullAccess) && (
-            <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-            <DialogTrigger asChild>
-                <Button disabled={!canPerformActions}>
+             <Button disabled={!canPerformActions} onClick={() => openModal()}>
                 <PlusCircle className="mr-2 h-4 w-4" />
                 Add New Supplier
-                </Button>
-            </DialogTrigger>
-            <DialogContent>
-                <form onSubmit={handleSaveSupplier}>
-                <DialogHeader>
-                    <DialogTitle>Add New Supplier</DialogTitle>
-                    <DialogDescription>
-                    Create a new supplier for your currently selected store.
-                    </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-4 py-6">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="grid gap-2">
-                        <Label htmlFor="supplier-name">Supplier Name</Label>
-                        <Input
-                            id="supplier-name"
-                            value={newSupplierName}
-                            onChange={(e) => setNewSupplierName(e.target.value)}
-                            placeholder="e.g., Global Tech"
-                            disabled={isSaving}
-                            required
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="supplier-code">Supplier Code</Label>
-                        <Input
-                            id="supplier-code"
-                            value={newSupplierCode}
-                            onChange={(e) => setNewSupplierCode(e.target.value)}
-                            placeholder="e.g., SUP-001"
-                            disabled={isSaving}
-                            required
-                        />
-                      </div>
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="description">Description (Optional)</Label>
-                      <Textarea
-                          id="description"
-                          value={newDescription}
-                          onChange={(e) => setNewDescription(e.target.value)}
-                          placeholder="e.g., Imports high-quality electronics"
-                          disabled={isSaving}
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="chat-search">Chat Search Name (Optional)</Label>
-                      <Input
-                          id="chat-search"
-                          value={newChatSearchName}
-                          onChange={(e) => setNewChatSearchName(e.target.value)}
-                          placeholder="e.g., globaltech_official"
-                          disabled={isSaving}
-                      />
-                    </div>
-                </div>
-                <DialogFooter>
-                    <Button variant="outline" type="button" onClick={resetModal} disabled={isSaving}>
-                    Cancel
-                    </Button>
-                    <Button type="submit" disabled={isSaving}>
-                    {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Save Supplier
-                    </Button>
-                </DialogFooter>
-                </form>
-            </DialogContent>
-            </Dialog>
+            </Button>
         )}
       </div>
 
@@ -287,18 +255,19 @@ export default function SuppliersPage() {
                 <TableHead>Description</TableHead>
                 <TableHead>Chat Search Name</TableHead>
                 <TableHead>Created At</TableHead>
+                <TableHead className='text-right'>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="h-24 text-center">
+                  <TableCell colSpan={6} className="h-24 text-center">
                     <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
                   </TableCell>
                 </TableRow>
               ) : paginatedSuppliers.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="h-24 text-center">
+                  <TableCell colSpan={6} className="h-24 text-center">
                     No suppliers found. Add a new supplier to get started.
                   </TableCell>
                 </TableRow>
@@ -311,6 +280,28 @@ export default function SuppliersPage() {
                     <TableCell className="text-muted-foreground">{supplier.chatSearchName}</TableCell>
                     <TableCell>
                       {supplier.createdAt?.toDate().toLocaleDateString()}
+                    </TableCell>
+                    <TableCell className="text-right">
+                        {(permissions?.canManageSuppliers || permissions?.hasFullAccess) && (
+                             <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => openModal(supplier)}>
+                                    <Edit className="mr-2 h-4 w-4" /> Edit
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                    className="text-destructive"
+                                    onClick={() => openDeleteDialog(supplier)}
+                                >
+                                    <Trash2 className="mr-2 h-4 w-4" /> Delete
+                                </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        )}
                     </TableCell>
                   </TableRow>
                 ))
@@ -342,6 +333,92 @@ export default function SuppliersPage() {
             )}
         </CardFooter>
       </Card>
+      
+      {/* Add/Edit Modal */}
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent>
+            <form onSubmit={handleSaveSupplier}>
+            <DialogHeader>
+                <DialogTitle>{currentSupplier?.id ? 'Edit' : 'Add New'} Supplier</DialogTitle>
+                <DialogDescription>
+                {currentSupplier?.id ? 'Update the details for this supplier.' : 'Create a new supplier for your currently selected store.'}
+                </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-6">
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                    <Label htmlFor="supplier-name">Supplier Name</Label>
+                    <Input
+                        id="supplier-name"
+                        value={currentSupplier?.name || ''}
+                        onChange={(e) => setCurrentSupplier(prev => ({...prev, name: e.target.value}))}
+                        placeholder="e.g., Global Tech"
+                        disabled={isSaving}
+                        required
+                    />
+                    </div>
+                    <div className="grid gap-2">
+                    <Label htmlFor="supplier-code">Supplier Code</Label>
+                    <Input
+                        id="supplier-code"
+                        value={currentSupplier?.supplierCode || ''}
+                        onChange={(e) => setCurrentSupplier(prev => ({...prev, supplierCode: e.target.value}))}
+                        placeholder="e.g., SUP-001"
+                        disabled={isSaving}
+                        required
+                    />
+                    </div>
+                </div>
+                <div className="grid gap-2">
+                    <Label htmlFor="description">Description (Optional)</Label>
+                    <Textarea
+                        id="description"
+                        value={currentSupplier?.description || ''}
+                        onChange={(e) => setCurrentSupplier(prev => ({...prev, description: e.target.value}))}
+                        placeholder="e.g., Imports high-quality electronics"
+                        disabled={isSaving}
+                    />
+                </div>
+                <div className="grid gap-2">
+                    <Label htmlFor="chat-search">Chat Search Name (Optional)</Label>
+                    <Input
+                        id="chat-search"
+                        value={currentSupplier?.chatSearchName || ''}
+                        onChange={(e) => setCurrentSupplier(prev => ({...prev, chatSearchName: e.target.value}))}
+                        placeholder="e.g., globaltech_official"
+                        disabled={isSaving}
+                    />
+                </div>
+            </div>
+            <DialogFooter>
+                <Button variant="outline" type="button" onClick={closeModal} disabled={isSaving}>
+                Cancel
+                </Button>
+                <Button type="submit" disabled={isSaving}>
+                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Save Supplier
+                </Button>
+            </DialogFooter>
+            </form>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteAlertOpen} onOpenChange={setIsDeleteAlertOpen}>
+          <AlertDialogContent>
+              <AlertDialogHeader>
+                  <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                      This action cannot be undone. This will permanently delete the supplier "{supplierToDelete?.name}".
+                  </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleConfirmDelete} className='bg-destructive text-destructive-foreground hover:bg-destructive/90'>Delete</AlertDialogAction>
+              </AlertDialogFooter>
+          </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   );
 }

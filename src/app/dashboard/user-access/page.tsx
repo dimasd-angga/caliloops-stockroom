@@ -65,6 +65,7 @@ import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, Pagi
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 const ROWS_PER_PAGE = 10;
 const defaultPermissions: Permissions = {
@@ -180,14 +181,14 @@ export default function UsersPage() {
             setLoadingRoles(false);
         },
         (error) => {
-            toast({ title: 'Error fetching roles', variant: 'destructive' });
+            toast({ title: 'Error fetching roles', description: error.message, variant: 'destructive' });
             setLoadingRoles(false);
         }
     );
 
     const unsubscribeStores = subscribeToStores(
         (storesData) => setStores(storesData),
-        (error) => toast({ title: 'Error fetching stores', variant: 'destructive' })
+        (error) => toast({ title: 'Error fetching stores', description: error.message, variant: 'destructive' })
     );
 
     return () => {
@@ -487,7 +488,7 @@ export default function UsersPage() {
 
       {/* Role Management Modal */}
       <Dialog open={isRoleModalOpen} onOpenChange={closeRoleModal}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="max-w-lg">
             <DialogHeader>
                 <DialogTitle>{currentRole?.id ? 'Edit Role' : 'Add Role'}</DialogTitle>
                 <DialogDescription>Define the role name and its permissions within the system.</DialogDescription>
@@ -498,29 +499,31 @@ export default function UsersPage() {
                     <Input id="role-name" value={currentRole?.name || ''} onChange={(e) => setCurrentRole({ ...currentRole, name: e.target.value })} disabled={isSavingRole} />
                 </div>
                 <Separator />
-                <div>
-                    <Label>Permissions</Label>
-                    <div className="space-y-4 mt-2">
-                        {Object.entries(permissionCategories).map(([category, perms]) => (
-                            <div key={category}>
-                                <h4 className="font-medium text-sm mb-2">{category}</h4>
-                                <div className="space-y-2 pl-2">
-                                {perms.map((perm) => (
-                                    <div key={perm.id} className="flex items-center space-x-2">
-                                        <Checkbox
-                                            id={perm.id}
-                                            checked={currentRole?.permissions?.[perm.id as keyof Permissions] || false}
-                                            onCheckedChange={(checked) => handlePermissionChange(perm.id as keyof Permissions, Boolean(checked))}
-                                            disabled={isSavingRole}
-                                        />
-                                        <Label htmlFor={perm.id} className="font-normal">{perm.label}</Label>
+                <ScrollArea className="h-96">
+                    <div className="p-1">
+                        <Label>Permissions</Label>
+                        <div className="space-y-4 mt-2">
+                            {Object.entries(permissionCategories).map(([category, perms]) => (
+                                <div key={category}>
+                                    <h4 className="font-medium text-sm mb-2">{category}</h4>
+                                    <div className="space-y-2 pl-2">
+                                    {perms.map((perm) => (
+                                        <div key={perm.id} className="flex items-center space-x-2">
+                                            <Checkbox
+                                                id={perm.id}
+                                                checked={currentRole?.permissions?.[perm.id as keyof Permissions] || false}
+                                                onCheckedChange={(checked) => handlePermissionChange(perm.id as keyof Permissions, Boolean(checked))}
+                                                disabled={isSavingRole}
+                                            />
+                                            <Label htmlFor={perm.id} className="font-normal">{perm.label}</Label>
+                                        </div>
+                                    ))}
                                     </div>
-                                ))}
                                 </div>
-                            </div>
-                        ))}
+                            ))}
+                        </div>
                     </div>
-                </div>
+                </ScrollArea>
             </div>
             <DialogFooter>
                 <Button variant="outline" onClick={closeRoleModal} disabled={isSavingRole}>Cancel</Button>

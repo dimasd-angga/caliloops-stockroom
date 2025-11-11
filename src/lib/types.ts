@@ -127,22 +127,22 @@ export type Supplier = {
 
 export type PurchaseOrder = {
   id: string;
-  poNumber: string; // Auto-generated running number
-  orderNumber?: string; // Manual input
-  orderDate: Timestamp; // Manual input with date picker
+  poNumber: string; 
+  orderNumber?: string; 
+  orderDate: Timestamp; 
   
   storeId: string;
   supplierId: string;
-  supplierName: string; // Denormalized for display
-  supplierCode: string; // Denormalized for display
+  supplierName: string; 
+  supplierCode: string; 
   
-  chatSearch: string; // Manual text input
+  chatSearch: string; 
   
   totalPcs: number;
   totalRmb: number;
   exchangeRate: number;
   
-  marking: string; // Selected from Courier DB
+  marking: string; 
   
   shippingCost?: number; 
   costPerPiece?: number;
@@ -158,11 +158,13 @@ export type PurchaseOrder = {
   totalPcsRefunded?: number;
 
   // Statuses
-  status: 'INPUTTED' | 'SHIPPING' | 'RECEIVED' | 'DONE';
+  status: 'INPUTTED' | 'IN SHIPPING (PARTIAL)' | 'IN SHIPPING' | 'RECEIVED (PARTIAL)' | 'RECEIVED' | 'DONE';
   isStockUpdated: boolean;
   
   // New confirmation fields
   isOldItemsInPurchaseMenu?: boolean;
+  isNewItemsPdfCreated?: boolean; // New field
+  isPrintoutCreated?: boolean; // New field
   isNewItemsUploaded?: boolean;
   isNewItemsAddedToPurchase?: boolean;
 
@@ -177,6 +179,7 @@ export type PurchaseOrder = {
 
   // For frontend joins
   supplier?: Supplier;
+  refund?: Refund;
 };
 
 export type Refund = {
@@ -211,9 +214,9 @@ export type Shipping = {
     kodeStorage?: string;
     kodeKontainer?: string;
     jumlahKoli: number;
-    noResi: string[]; // Changed from string to string[]
-    tanggalStokDiterima: Timestamp;
-    harga: number; // Shipping cost
+    noResi: string[];
+    tanggalStokDiterima: Timestamp | null;
+    harga: number;
 
     // Auto-calculated fields
     linkedPoNumbers: string[];
@@ -221,6 +224,11 @@ export type Shipping = {
     calculatedTotalRmb: number;
     combinedPhotoLink?: string;
     costPerPiece: number;
+
+    // New fields for status and payment
+    status: 'SHIPPING' | 'RECEIVED';
+    isPaid: boolean;
+    paidDate: Timestamp | null;
 
     createdAt: Timestamp;
     createdBy: string;

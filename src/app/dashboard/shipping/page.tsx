@@ -24,7 +24,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -36,6 +35,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Loader2,
   Ship,
@@ -44,6 +44,9 @@ import {
   Search,
   PlusCircle,
   X,
+  MoreHorizontal,
+  Edit,
+  Trash2,
 } from 'lucide-react';
 import {
     Dialog,
@@ -54,9 +57,27 @@ import {
     DialogTitle,
     DialogTrigger,
   } from '@/components/ui/dialog';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import type { Shipping, PurchaseOrder, Courier } from '@/lib/types';
 import {
     addShipping,
+    updateShipping,
+    deleteShipping,
     subscribeToShipping,
 } from '@/lib/services/shippingService';
 import { 
@@ -76,8 +97,8 @@ const TrackingNumberInput = ({ value, onChange, disabled }: { value: string[], o
       if (e.key === ' ' || e.key === 'Enter') {
         e.preventDefault();
         const newTag = inputValue.trim();
-        if (newTag && !value.includes(newTag)) {
-          onChange([...value, newTag]);
+        if (newTag && !(value || []).includes(newTag)) {
+          onChange([...(value || []), newTag]);
         }
         setInputValue('');
       }
@@ -89,7 +110,7 @@ const TrackingNumberInput = ({ value, onChange, disabled }: { value: string[], o
   
     return (
       <div className="flex flex-wrap items-center gap-2 rounded-md border border-input p-2">
-        {value.map(tag => (
+        {(value || []).map(tag => (
           <Badge key={tag} variant="secondary" className="flex items-center gap-1">
             {tag}
             {!disabled && (
@@ -108,7 +129,7 @@ const TrackingNumberInput = ({ value, onChange, disabled }: { value: string[], o
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={value.length === 0 ? "Type and press space..." : ""}
+          placeholder={!value || value.length === 0 ? "Type and press space..." : ""}
           className="h-auto flex-grow border-none bg-transparent p-0 shadow-none focus-visible:ring-0"
           disabled={disabled}
         />
@@ -126,13 +147,7 @@ export default function ShippingPage() {
 
   // Modal and Form State
   const [isModalOpen, setIsModalOpen] = React.useState(false);
-  const [marking, setMarking] = React.useState('');
-  const [kodeStorage, setKodeStorage] = React.useState('');
-  const [kodeKontainer, setKodeKontainer] = React.useState('');
-  const [jumlahKoli, setJumlahKoli] = React.useState<number | ''>('');
-  const [noResi, setNoResi] = React.useState<string[]>([]);
-  const [tanggalStokDiterima, setTanggalStokDiterima] = React.useState<Date | undefined>();
-  const [harga, setHarga] = React.useState<number | ''>('');
+  const [currentShipping, setCurrentShipping] = React.useState<Partial<Shipping> | null>(null);
   
   // Data state
   const [couriers, setCouriers] = React.useState<Courier[]>([]);
@@ -147,8 +162,14 @@ export default function ShippingPage() {
   // Submission state
   const [isSaving, setIsSaving] = React.useState(false);
   
-  // Pagination
+  // Pagination & Search
   const [currentPage, setCurrentPage] = React.useState(1);
+  const [searchTerm, setSearchTerm] = React.useState('');
+
+
+  // Delete confirmation
+  const [isDeleteAlertOpen, setIsDeleteAlertOpen] = React.useState(false);
+  const [shippingToDelete, setShippingToDelete] = React.useState<Shipping | null>(null);
 
   React.useEffect(() => {
     if (!storeId) {
@@ -175,20 +196,36 @@ export default function ShippingPage() {
   }, [storeId, toast]);
 
   const resetForm = () => {
-    setMarking('');
-    setKodeStorage('');
-    setKodeKontainer('');
-    setJumlahKoli('');
-    setNoResi([]);
-    setTanggalStokDiterima(undefined);
-    setHarga('');
+    setCurrentShipping(null);
     setLinkedPOs([]);
     setAggregatedData(null);
     setIsModalOpen(false);
   };
+  
+  const openModal = (shipping: Shipping | null = null) => {
+    if (shipping) {
+        setCurrentShipping({
+            ...shipping,
+            tanggalStokDiterima: shipping.tanggalStokDiterima ? (shipping.tanggalStokDiterima as any).toDate() : undefined,
+            paidDate: shipping.paidDate ? (shipping.paidDate as any).toDate() : undefined
+        });
+        if (shipping.linkedPoNumbers && shipping.linkedPoNumbers.length > 0) {
+            handleCheckPOs(shipping.noResi, shipping.linkedPoNumbers);
+        }
+    } else {
+        setCurrentShipping({ noResi: [], jumlahKoli: '' as any, harga: '' as any, status: 'SHIPPING', isPaid: false });
+    }
+    setIsModalOpen(true);
+  }
 
-  const handleCheckPOs = async () => {
-    if (!storeId || noResi.length === 0) {
+  const handleInputChange = (field: keyof Shipping, value: any) => {
+    setCurrentShipping(prev => (prev ? { ...prev, [field]: value } : null));
+  };
+
+
+  const handleCheckPOs = async (resiToCheck?: string[], poNumbers?: string[]) => {
+    const noResi = resiToCheck || currentShipping?.noResi;
+    if (!storeId || !noResi || noResi.length === 0) {
         toast({ title: 'Please provide at least one tracking number (No Resi).', variant: 'destructive' });
         return;
     }
@@ -218,8 +255,8 @@ export default function ShippingPage() {
   };
   
   const handleSubmit = async () => {
-    if (!storeId || !marking || !tanggalStokDiterima || harga === '' || jumlahKoli === '' || linkedPOs.length === 0 || !aggregatedData) {
-        toast({ title: 'Please fill all required fields and link to at least one PO.', variant: 'destructive' });
+    if (!storeId || !currentShipping || !currentShipping.marking || currentShipping.jumlahKoli === undefined || currentShipping.jumlahKoli === null || linkedPOs.length === 0) {
+        toast({ title: 'Marking, Jumlah Koli, and at least one linked PO are required.', variant: 'destructive' });
         return;
     }
     
@@ -230,51 +267,95 @@ export default function ShippingPage() {
 
     setIsSaving(true);
     try {
-        const firstPoCostPerPiece = linkedPOs.length > 0 ? (linkedPOs[0].costPerPiece || 0) : 0;
+        const firstPo = linkedPOs[0];
+        const costPerPieceFromPO = firstPo?.costPerPiece || 0;
 
-        const shippingData: Omit<Shipping, 'id' | 'createdAt'> = {
+        const { id, ...shippingData} = currentShipping;
+
+        const dataToSave: Omit<Shipping, 'id' | 'createdAt'> = {
             storeId,
-            marking,
-            kodeStorage: kodeStorage || '',
-            kodeKontainer: kodeKontainer || '',
-            jumlahKoli: Number(jumlahKoli),
-            noResi: noResi,
-            tanggalStokDiterima: Timestamp.fromDate(tanggalStokDiterima),
-            harga: Number(harga),
+            marking: shippingData.marking!,
+            kodeStorage: shippingData.kodeStorage || '',
+            kodeKontainer: shippingData.kodeKontainer || '',
+            jumlahKoli: Number(shippingData.jumlahKoli),
+            noResi: shippingData.noResi || [],
+            tanggalStokDiterima: shippingData.tanggalStokDiterima ? Timestamp.fromDate(new Date(shippingData.tanggalStokDiterima)) : null,
+            harga: shippingData.harga === '' || shippingData.harga === undefined ? 0 : Number(shippingData.harga),
             linkedPoNumbers: linkedPOs.map(po => po.poNumber),
-            calculatedTotalPcs: aggregatedData.totalPcs,
-            calculatedTotalRmb: aggregatedData.totalRmb,
-            combinedPhotoLink: aggregatedData.photoUrls.join('\n'),
-            costPerPiece: firstPoCostPerPiece,
+            calculatedTotalPcs: aggregatedData?.totalPcs || 0,
+            calculatedTotalRmb: aggregatedData?.totalRmb || 0,
+            combinedPhotoLink: aggregatedData?.photoUrls.join('\n') || '',
+            costPerPiece: costPerPieceFromPO,
+            status: shippingData.status || 'SHIPPING',
+            isPaid: shippingData.isPaid || false,
+            paidDate: shippingData.paidDate ? Timestamp.fromDate(new Date(shippingData.paidDate)) : null,
             createdBy: user?.name || 'Unknown User',
         };
 
-        await addShipping(shippingData);
+        if (id) {
+            await updateShipping(id, dataToSave);
+        } else {
+            await addShipping(dataToSave);
+        }
 
         const linkedPoIds = linkedPOs.map(po => po.id);
-        const shippingCostPerPo = Number(harga) / linkedPoIds.length;
-        await updatePOStatusAndShippingCost(linkedPoIds, shippingCostPerPo);
+        const shippingCostPerPo = linkedPoIds.length > 0 && currentShipping.harga && currentShipping.harga !== '' ? Number(currentShipping.harga) / linkedPoIds.length : 0;
+        
+        if (shippingCostPerPo > 0) {
+            await updatePOStatusAndShippingCost(linkedPoIds, shippingCostPerPo);
+        }
 
-        toast({ title: 'Shipping Data Saved Successfully!', description: `${linkedPOs.length} PO(s) have been updated.` });
+        toast({ title: `Shipping Data ${id ? 'Updated' : 'Saved'} Successfully!`, description: `${linkedPOs.length} PO(s) have been updated.` });
         resetForm();
 
     } catch (error) {
         console.error("Error saving shipping data:", error);
-        toast({ title: 'Failed to save shipping data.', variant: 'destructive' });
+        toast({ title: `Failed to ${id ? 'update' : 'save'} shipping data.`, variant: 'destructive' });
     } finally {
         setIsSaving(false);
     }
   }
+
+  const openDeleteDialog = (shipping: Shipping) => {
+    setShippingToDelete(shipping);
+    setIsDeleteAlertOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!shippingToDelete) return;
+    try {
+      await deleteShipping(shippingToDelete.id);
+      toast({ title: 'Shipping entry deleted successfully' });
+      setIsDeleteAlertOpen(false);
+      setShippingToDelete(null);
+    } catch (error) {
+      toast({ title: 'Error deleting shipping entry', variant: 'destructive' });
+    }
+  };
   
   const canPerformActions = user?.email === 'superadmin@caliloops.com' ? !!selectedStoreId : !!user?.storeId;
   const isFormDisabled = isSaving || isCheckingPOs;
 
-  const totalPages = Math.ceil(shippingHistory.length / ROWS_PER_PAGE);
+  const filteredHistory = React.useMemo(() => {
+    if (!searchTerm) {
+      return shippingHistory;
+    }
+    const lowercasedTerm = searchTerm.toLowerCase();
+    return shippingHistory.filter(item => {
+      const hasMatchingResi = item.noResi.some(resi => resi.toLowerCase().includes(lowercasedTerm));
+      const hasMatchingStorage = item.kodeStorage?.toLowerCase().includes(lowercasedTerm);
+      const hasMatchingKontainer = item.kodeKontainer?.toLowerCase().includes(lowercasedTerm);
+      return hasMatchingResi || hasMatchingStorage || hasMatchingKontainer;
+    });
+  }, [shippingHistory, searchTerm]);
+
+
+  const totalPages = Math.ceil(filteredHistory.length / ROWS_PER_PAGE);
   const paginatedHistory = React.useMemo(() => {
     const startIndex = (currentPage - 1) * ROWS_PER_PAGE;
     const endIndex = startIndex + ROWS_PER_PAGE;
-    return shippingHistory.slice(startIndex, endIndex);
-  }, [shippingHistory, currentPage]);
+    return filteredHistory.slice(startIndex, endIndex);
+  }, [filteredHistory, currentPage]);
 
   const handlePageChange = (page: number) => {
     if (page >= 1 && page <= totalPages) {
@@ -294,70 +375,55 @@ export default function ShippingPage() {
             Input shipping data which will be automatically linked to Purchase Orders.
             </p>
         </div>
-         {canPerformActions && (
+         {(permissions?.canManageShipping || permissions?.hasFullAccess) && (
              <Dialog open={isModalOpen} onOpenChange={(open) => { if(open) setIsModalOpen(true); else resetForm(); }}>
                 <DialogTrigger asChild>
-                    <Button>
+                    <Button disabled={!canPerformActions}>
                         <PlusCircle className="mr-2 h-4 w-4" />
                         New Shipping Entry
                     </Button>
                 </DialogTrigger>
                 <DialogContent className="max-w-4xl">
                      <DialogHeader>
-                        <DialogTitle>New Shipping Entry</DialogTitle>
-                        <DialogDescription>Fill in the form to record a new shipment.</DialogDescription>
+                        <DialogTitle>{currentShipping?.id ? 'Edit' : 'New'} Shipping Entry</DialogTitle>
+                        <DialogDescription>{currentShipping?.id ? 'Update the details for this shipment.' : 'Fill in the form to record a new shipment.'}</DialogDescription>
                     </DialogHeader>
                     <div className="space-y-6 py-4 max-h-[70vh] overflow-y-auto pr-6">
+                        {/* Section 1 */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="grid gap-2">
                                 <Label htmlFor="marking">Marking</Label>
-                                <Select value={marking} onValueChange={setMarking} disabled={isFormDisabled}>
+                                <Select value={currentShipping?.marking || ''} onValueChange={(val) => handleInputChange('marking', val)} disabled={isFormDisabled}>
                                     <SelectTrigger id="marking"><SelectValue placeholder="Select Marking" /></SelectTrigger>
                                     <SelectContent>{couriers.map(c => <SelectItem key={c.id} value={c.marking}>{c.marking} ({c.name})</SelectItem>)}</SelectContent>
                                 </Select>
                             </div>
                             <div className="grid gap-2">
+                                <Label htmlFor="jumlahKoli">Jumlah Koli</Label>
+                                <Input id="jumlahKoli" type="number" value={currentShipping?.jumlahKoli || ''} onChange={e => handleInputChange('jumlahKoli', e.target.value === '' ? '' : Number(e.target.value))} disabled={isFormDisabled} />
+                            </div>
+                            <div className="grid gap-2">
                                 <Label htmlFor="kodeStorage">Kode Storage</Label>
-                                <Input id="kodeStorage" value={kodeStorage} onChange={e => setKodeStorage(e.target.value)} disabled={isFormDisabled} />
+                                <Input id="kodeStorage" value={currentShipping?.kodeStorage || ''} onChange={e => handleInputChange('kodeStorage', e.target.value)} disabled={isFormDisabled} />
                             </div>
                             <div className="grid gap-2">
                                 <Label htmlFor="kodeKontainer">Kode Kontainer</Label>
-                                <Input id="kodeKontainer" value={kodeKontainer} onChange={e => setKodeKontainer(e.target.value)} disabled={isFormDisabled} />
-                            </div>
-                            <div className="grid gap-2">
-                                <Label htmlFor="jumlahKoli">Jumlah Koli</Label>
-                                <Input id="jumlahKoli" type="number" value={jumlahKoli} onChange={e => setJumlahKoli(e.target.value === '' ? '' : Number(e.target.value))} disabled={isFormDisabled} />
+                                <Input id="kodeKontainer" value={currentShipping?.kodeKontainer || ''} onChange={e => handleInputChange('kodeKontainer', e.target.value)} disabled={isFormDisabled} />
                             </div>
                         </div>
 
+                         {/* Section 2 */}
                          <div className="grid grid-cols-1 gap-4">
                             <div className="grid gap-2">
                                 <Label htmlFor="noResi">No. Resi</Label>
-                                <TrackingNumberInput value={noResi} onChange={setNoResi} disabled={isFormDisabled} />
-                                <Button type="button" onClick={handleCheckPOs} disabled={isFormDisabled || noResi.length === 0} className="mt-2 w-fit">
+                                <TrackingNumberInput value={currentShipping?.noResi || []} onChange={(val) => handleInputChange('noResi', val)} disabled={isFormDisabled} />
+                                <Button type="button" onClick={() => handleCheckPOs()} disabled={isFormDisabled || !currentShipping?.noResi || currentShipping.noResi.length === 0} className="mt-2 w-fit">
                                     {isCheckingPOs ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Mencari...</> : <><Search className="mr-2 h-4 w-4"/> Cari PO</>}
                                 </Button>
                             </div>
                         </div>
                         
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="grid gap-2">
-                                <Label htmlFor="tanggalStok">Tgl Stok Diterima</Label>
-                                <Popover><PopoverTrigger asChild>
-                                    <Button variant={'outline'} className={cn('justify-start text-left font-normal', !tanggalStokDiterima && 'text-muted-foreground')} disabled={isFormDisabled}>
-                                        <CalendarIcon className="mr-2 h-4 w-4" />
-                                        {tanggalStokDiterima ? format(tanggalStokDiterima, 'PPP') : <span>Pilih tanggal</span>}
-                                    </Button>
-                                </PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={tanggalStokDiterima} onSelect={setTanggalStokDiterima} initialFocus /></PopoverContent></Popover>
-                            </div>
-                            <div className="grid gap-2">
-                                <Label htmlFor="harga">Harga (Ongkir)</Label>
-                                <Input id="harga" type="number" value={harga} onChange={e => setHarga(e.target.value === '' ? '' : Number(e.target.value))} disabled={isFormDisabled} placeholder='dalam IDR' />
-                            </div>
-                        </div>
-
-
-                        {/* Aggregated Data Display */}
+                        {/* Section 3 - Auto Aggregated Data */}
                         {aggregatedData && (
                             <Card className="bg-muted/50">
                                 <CardHeader><CardTitle className="text-lg">Informasi PO Terkait</CardTitle></CardHeader>
@@ -393,16 +459,63 @@ export default function ShippingPage() {
                                     <div className="pt-4">
                                         <div className="font-medium truncate">Link Foto (Auto): <a href={aggregatedData.photoUrls[0]} target='_blank' rel='noopener noreferrer' className="font-normal text-blue-500 hover:underline">{aggregatedData.photoUrls.join(', ')}</a></div>
                                     </div>
+                                    <div className="font-medium">
+                                      Cost per Pcs (from PO):
+                                      <span className="font-normal text-muted-foreground ml-2">
+                                        {(linkedPOs[0]?.costPerPiece || 0).toLocaleString('id-ID', {style: 'currency', currency: 'IDR'})}
+                                      </span>
+                                    </div>
                                 </CardContent>
                             </Card>
                         )}
+                        
+                        {/* Section 4 - Admin Input */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 border-t pt-6">
+                            <div className="grid gap-2">
+                                <Label htmlFor="status">Status</Label>
+                                <Select value={currentShipping?.status || 'SHIPPING'} onValueChange={(val) => handleInputChange('status', val)} disabled={isFormDisabled}>
+                                    <SelectTrigger id="status"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="SHIPPING">Shipping</SelectItem>
+                                        <SelectItem value="RECEIVED">Received</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="grid gap-2">
+                                <Label htmlFor="tanggalStok">Received Date</Label>
+                                <Popover><PopoverTrigger asChild>
+                                    <Button variant={'outline'} className={cn('justify-start text-left font-normal', !currentShipping?.tanggalStokDiterima && 'text-muted-foreground')} disabled={isFormDisabled}>
+                                        <CalendarIcon className="mr-2 h-4 w-4" />
+                                        {currentShipping?.tanggalStokDiterima ? format(new Date(currentShipping.tanggalStokDiterima), 'PPP') : <span>Pilih tanggal</span>}
+                                    </Button>
+                                </PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={currentShipping?.tanggalStokDiterima ? new Date(currentShipping.tanggalStokDiterima) : undefined} onSelect={(date) => handleInputChange('tanggalStokDiterima', date)} initialFocus /></PopoverContent></Popover>
+                            </div>
+                             <div className="grid gap-2">
+                                <Label htmlFor="harga">Harga (Ongkir)</Label>
+                                <Input id="harga" type="number" value={currentShipping?.harga || ''} onChange={e => handleInputChange('harga', e.target.value === '' ? '' : Number(e.target.value))} disabled={isFormDisabled} placeholder='dalam IDR' />
+                            </div>
+                             <div className="flex items-center space-x-2 pt-6">
+                                <Checkbox id="isPaid" checked={currentShipping?.isPaid} onCheckedChange={(checked) => handleInputChange('isPaid', checked)} disabled={isFormDisabled}/>
+                                <Label htmlFor="isPaid">Paid</Label>
+                            </div>
+                             <div className="grid gap-2">
+                                <Label htmlFor="paidDate">Paid Date</Label>
+                                <Popover><PopoverTrigger asChild>
+                                    <Button variant={'outline'} className={cn('justify-start text-left font-normal', !currentShipping?.paidDate && 'text-muted-foreground')} disabled={isFormDisabled}>
+                                        <CalendarIcon className="mr-2 h-4 w-4" />
+                                        {currentShipping?.paidDate ? format(new Date(currentShipping.paidDate), 'PPP') : <span>Pilih tanggal</span>}
+                                    </Button>
+                                </PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={currentShipping?.paidDate ? new Date(currentShipping.paidDate) : undefined} onSelect={(date) => handleInputChange('paidDate', date)} initialFocus /></PopoverContent></Popover>
+                            </div>
+                        </div>
+
                     </div>
                     <DialogFooter>
                         <Button variant="outline" onClick={resetForm} disabled={isFormDisabled}>
                             Cancel
                         </Button>
-                        <Button onClick={handleSubmit} disabled={isFormDisabled || linkedPOs.length === 0}>
-                            {isSaving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Saving...</> : 'Save Shipping Data'}
+                        <Button onClick={handleSubmit} disabled={isFormDisabled || (currentShipping?.id ? false : linkedPOs.length === 0)}>
+                            {isSaving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Saving...</> : `Save Shipping Data`}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
@@ -423,48 +536,89 @@ export default function ShippingPage() {
             </Alert>
        )}
 
-      {/* Shipping History Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Shipping History</CardTitle>
-          <CardDescription>A log of all previously recorded shipments for this store.</CardDescription>
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <CardTitle>Shipping History</CardTitle>
+              <CardDescription>A log of all previously recorded shipments for this store.</CardDescription>
+            </div>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Search by Resi, Storage, or Kontainer..."
+                className="w-full pl-8 sm:w-[300px]"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Marking</TableHead>
-                <TableHead>Kode Storage/Kontainer</TableHead>
-                <TableHead>Jumlah Koli</TableHead>
-                <TableHead>Tanggal Diterima</TableHead>
-                <TableHead>No Resi</TableHead>
-                <TableHead>Biaya (IDR)</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loadingHistory ? (
-                <TableRow><TableCell colSpan={6} className="h-24 text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" /></TableCell></TableRow>
-              ) : paginatedHistory.length === 0 ? (
-                <TableRow><TableCell colSpan={6} className="h-24 text-center">No shipping history found.</TableCell></TableRow>
-              ) : (
-                paginatedHistory.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="font-medium">{item.marking}</TableCell>
-                    <TableCell>{item.kodeStorage || 'N/A'} / {item.kodeKontainer || 'N/A'}</TableCell>
-                    <TableCell>{item.jumlahKoli}</TableCell>
-                    <TableCell>{format(item.tanggalStokDiterima.toDate(), 'dd MMM yyyy')}</TableCell>
-                    <TableCell className="whitespace-pre-wrap max-w-xs">{Array.isArray(item.noResi) ? item.noResi.join(', ') : item.noResi}</TableCell>
-                    <TableCell>{item.harga.toLocaleString('id-ID', { style: 'currency', currency: 'IDR' })}</TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+          <div className='overflow-x-auto'>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Marking</TableHead>
+                  <TableHead>Kode Storage</TableHead>
+                  <TableHead>Kode Kontainer</TableHead>
+                  <TableHead>No Resi</TableHead>
+                  <TableHead>Biaya (IDR)</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Received Date</TableHead>
+                  <TableHead>Paid</TableHead>
+                  <TableHead>Paid Date</TableHead>
+                  <TableHead className='text-right'>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loadingHistory ? (
+                  <TableRow><TableCell colSpan={10} className="h-24 text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" /></TableCell></TableRow>
+                ) : paginatedHistory.length === 0 ? (
+                  <TableRow><TableCell colSpan={10} className="h-24 text-center">No shipping history found.</TableCell></TableRow>
+                ) : (
+                  paginatedHistory.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell className="font-medium">{item.marking}</TableCell>
+                      <TableCell>{item.kodeStorage}</TableCell>
+                      <TableCell>{item.kodeKontainer}</TableCell>
+                      <TableCell className="whitespace-pre-wrap max-w-xs">{Array.isArray(item.noResi) ? item.noResi.join(', ') : item.noResi}</TableCell>
+                      <TableCell>{item.harga.toLocaleString('id-ID', { style: 'currency', currency: 'IDR' })}</TableCell>
+                      <TableCell><Badge variant={item.status === 'SHIPPING' ? 'info' : 'success'}>{item.status}</Badge></TableCell>
+                      <TableCell>{item.tanggalStokDiterima ? format(item.tanggalStokDiterima.toDate(), 'dd MMM yyyy') : 'N/A'}</TableCell>
+                      <TableCell>{item.isPaid ? 'Yes' : 'No'}</TableCell>
+                      <TableCell>{item.paidDate ? format(item.paidDate.toDate(), 'dd MMM yyyy') : 'N/A'}</TableCell>
+                      <TableCell className="text-right">
+                          {(permissions?.canManageShipping || permissions?.hasFullAccess) && (
+                              <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                      <Button variant="ghost" size="icon">
+                                          <MoreHorizontal className="h-4 w-4" />
+                                      </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                      <DropdownMenuItem onSelect={() => openModal(item)}>
+                                          <Edit className="mr-2 h-4 w-4" /> Edit
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem className="text-destructive" onSelect={() => openDeleteDialog(item)}>
+                                          <Trash2 className="mr-2 h-4 w-4" /> Delete
+                                      </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                              </DropdownMenu>
+                          )}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
         {totalPages > 1 && (
             <CardFooter className="flex items-center justify-between pt-6">
                  <div className="text-sm text-muted-foreground">
-                    Showing <strong>{Math.min((currentPage - 1) * ROWS_PER_PAGE + 1, shippingHistory.length)}</strong> to <strong>{Math.min(currentPage * ROWS_PER_PAGE, shippingHistory.length)}</strong> of <strong>{shippingHistory.length}</strong> entries
+                    Showing <strong>{Math.min((currentPage - 1) * ROWS_PER_PAGE + 1, filteredHistory.length)}</strong> to <strong>{Math.min(currentPage * ROWS_PER_PAGE, filteredHistory.length)}</strong> of <strong>{filteredHistory.length}</strong> entries
                 </div>
                 <Pagination>
                     <PaginationContent>
@@ -476,8 +630,21 @@ export default function ShippingPage() {
             </CardFooter>
         )}
       </Card>
+
+      <AlertDialog open={isDeleteAlertOpen} onOpenChange={setIsDeleteAlertOpen}>
+        <AlertDialogContent>
+            <AlertDialogHeader>
+                <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                <AlertDialogDescription>
+                    This action cannot be undone. This will permanently delete the shipping entry with marking "{shippingToDelete?.marking}".
+                </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleConfirmDelete} className='bg-destructive text-destructive-foreground hover:bg-destructive/90'>Delete</AlertDialogAction>
+            </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
-
-    
