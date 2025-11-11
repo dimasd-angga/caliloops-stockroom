@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -88,51 +89,52 @@ import { Timestamp } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { Pagination, PaginationContent, PaginationItem, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
+import { NumericInput } from '@/components/ui/numeric-input';
 
 const TrackingNumberInput = ({ value, onChange, disabled }: { value: string[], onChange: (value: string[]) => void, disabled?: boolean }) => {
     const [inputValue, setInputValue] = React.useState('');
-
+  
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-        if (e.key === ' ' || e.key === 'Enter') {
-            e.preventDefault();
-            const newTag = inputValue.trim();
-            if (newTag && !(value || []).includes(newTag)) {
-                onChange([...(value || []), newTag]);
-            }
-            setInputValue('');
+      if (e.key === ' ' || e.key === 'Enter') {
+        e.preventDefault();
+        const newTag = inputValue.trim().toUpperCase();
+        if (newTag && !(value || []).includes(newTag)) {
+          onChange([...(value || []), newTag]);
         }
+        setInputValue('');
+      }
     };
-
+  
     const removeTag = (tagToRemove: string) => {
-        onChange(value.filter(tag => tag !== tagToRemove));
+      onChange((value || []).filter(tag => tag !== tagToRemove));
     };
-
+  
     return (
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-input p-2">
-            {(value || []).map(tag => (
-                <Badge key={tag} variant="secondary" className="flex items-center gap-1">
-                    {tag}
-                    {!disabled && (
-                        <button
-                            type="button"
-                            onClick={() => removeTag(tag)}
-                            className="rounded-full hover:bg-destructive/20"
-                        >
-                            <X className="h-3 w-3" />
-                        </button>
-                    )}
-                </Badge>
-            ))}
-            <Input
-                type="text"
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={!value || value.length === 0 ? "Type and press space..." : ""}
-                className="h-auto flex-grow border-none bg-transparent p-0 shadow-none focus-visible:ring-0"
-                disabled={disabled}
-            />
-        </div>
+      <div className="flex flex-wrap items-center gap-2 rounded-md border border-input p-2">
+        {(value || []).map(tag => (
+          <Badge key={tag} variant="secondary" className="flex items-center gap-1">
+            {tag}
+            {!disabled && (
+                <button
+                    type="button"
+                    onClick={() => removeTag(tag)}
+                    className="rounded-full hover:bg-destructive/20"
+                >
+                    <X className="h-3 w-3" />
+                </button>
+            )}
+          </Badge>
+        ))}
+        <Input
+          type="text"
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={!value || value.length === 0 ? "Type and press space..." : ""}
+          className="h-auto flex-grow border-none bg-transparent p-0 shadow-none focus-visible:ring-0"
+          disabled={disabled}
+        />
+      </div>
     );
 };
 
@@ -156,6 +158,7 @@ export default function ShippingPage() {
     // Aggregation state
     const [isCheckingPOs, setIsCheckingPOs] = React.useState(false);
     const [linkedPOs, setLinkedPOs] = React.useState<PurchaseOrder[]>([]);
+    const [unfoundResi, setUnfoundResi] = React.useState<string[]>([]);
     const [aggregatedData, setAggregatedData] = React.useState<{ totalPcs: number, totalRmb: number, photoUrls: string[] } | null>(null);
 
     // Submission state
@@ -198,6 +201,7 @@ export default function ShippingPage() {
         setCurrentShipping(null);
         setLinkedPOs([]);
         setAggregatedData(null);
+        setUnfoundResi([]);
         setIsModalOpen(false);
     };
 
@@ -208,11 +212,10 @@ export default function ShippingPage() {
                 tanggalStokDiterima: shipping.tanggalStokDiterima ? (shipping.tanggalStokDiterima as any).toDate() : undefined,
                 paidDate: shipping.paidDate ? (shipping.paidDate as any).toDate() : undefined
             });
-            if (shipping.linkedPoNumbers && shipping.linkedPoNumbers.length > 0) {
-                handleCheckPOs(shipping.noResi, shipping.linkedPoNumbers);
+            if (shipping.noResi && shipping.noResi.length > 0) {
+                handleCheckPOs(shipping.noResi);
             }
         } else {
-            // FIXED: Initialize with proper empty values
             setCurrentShipping({
                 noResi: [],
                 jumlahKoli: 0,
@@ -232,12 +235,16 @@ export default function ShippingPage() {
     const handleInputChange = (field: keyof Shipping, value: any) => {
         setCurrentShipping(prev => {
             if (!prev) return null;
+            const numValue = Number(value);
+            if (field === 'harga' || field === 'jumlahKoli') {
+                return { ...prev, [field]: isNaN(numValue) ? 0 : numValue };
+            }
             return { ...prev, [field]: value };
         });
     };
 
 
-    const handleCheckPOs = async (resiToCheck?: string[], poNumbers?: string[]) => {
+    const handleCheckPOs = async (resiToCheck?: string[]) => {
         const noResi = resiToCheck || currentShipping?.noResi;
         if (!storeId || !noResi || noResi.length === 0) {
             toast({ title: 'Please provide at least one tracking number (No Resi).', variant: 'destructive' });
@@ -246,9 +253,13 @@ export default function ShippingPage() {
         setIsCheckingPOs(true);
         setLinkedPOs([]);
         setAggregatedData(null);
+        setUnfoundResi([]);
 
         try {
             const foundPOs = await findPOsByTrackingNumbers(storeId, noResi);
+            const foundResiInPOs = new Set(foundPOs.flatMap(po => po.trackingNumber));
+            const notFound = noResi.filter(resi => !foundResiInPOs.has(resi));
+            setUnfoundResi(notFound);
 
             if (foundPOs.length === 0) {
                 toast({ title: 'No matching Purchase Orders found for the provided tracking numbers.' });
@@ -268,6 +279,13 @@ export default function ShippingPage() {
         }
     };
 
+    const newCostPerPiece = React.useMemo(() => {
+        if (!currentShipping || !currentShipping.harga || currentShipping.harga <= 0 || !aggregatedData || aggregatedData.totalPcs <= 0) {
+            return 0;
+        }
+        return currentShipping.harga / aggregatedData.totalPcs;
+    }, [currentShipping?.harga, aggregatedData?.totalPcs]);
+
     const handleSubmit = async () => {
         if (!storeId || !currentShipping || !currentShipping.marking || currentShipping.jumlahKoli === undefined || currentShipping.jumlahKoli === null || linkedPOs.length === 0) {
             toast({ title: 'Marking, Jumlah Koli, and at least one linked PO are required.', variant: 'destructive' });
@@ -281,9 +299,6 @@ export default function ShippingPage() {
 
         setIsSaving(true);
         try {
-            const firstPo = linkedPOs[0];
-            const costPerPieceFromPO = firstPo?.costPerPiece || 0;
-
             const { id, ...shippingData} = currentShipping;
 
             const dataToSave: Omit<Shipping, 'id' | 'createdAt'> = {
@@ -299,7 +314,7 @@ export default function ShippingPage() {
                 calculatedTotalPcs: aggregatedData?.totalPcs || 0,
                 calculatedTotalRmb: aggregatedData?.totalRmb || 0,
                 combinedPhotoLink: aggregatedData?.photoUrls.join('\n') || '',
-                costPerPiece: costPerPieceFromPO,
+                costPerPiece: newCostPerPiece,
                 status: shippingData.status || 'SHIPPING',
                 isPaid: shippingData.isPaid || false,
                 paidDate: shippingData.paidDate ? Timestamp.fromDate(new Date(shippingData.paidDate)) : null,
@@ -313,10 +328,8 @@ export default function ShippingPage() {
             }
 
             const linkedPoIds = linkedPOs.map(po => po.id);
-            const shippingCostPerPo = linkedPoIds.length > 0 && currentShipping.harga && currentShipping.harga !== '' ? Number(currentShipping.harga) / linkedPoIds.length : 0;
-
-            if (shippingCostPerPo > 0) {
-                await updatePOStatusAndShippingCost(linkedPoIds, shippingCostPerPo);
+            if (newCostPerPiece > 0 && linkedPoIds.length > 0) {
+                await updatePOStatusAndShippingCost(linkedPoIds, newCostPerPiece);
             }
 
             toast({ title: `Shipping Data ${id ? 'Updated' : 'Saved'} Successfully!`, description: `${linkedPOs.length} PO(s) have been updated.` });
@@ -390,7 +403,10 @@ export default function ShippingPage() {
                     </p>
                 </div>
                 {(permissions?.canManageShipping || permissions?.hasFullAccess) && (
-                    <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+                    <Dialog open={isModalOpen} onOpenChange={(isOpen) => {
+                        if (!isOpen) resetForm();
+                        else setIsModalOpen(true);
+                    }}>
                         <DialogTrigger asChild>
                             <Button disabled={!canPerformActions} onClick={() => openModal()}>
                                 <PlusCircle className="mr-2 h-4 w-4" />
@@ -413,19 +429,15 @@ export default function ShippingPage() {
                                             disabled={isFormDisabled}
                                         >
                                             <SelectTrigger id="marking"><SelectValue placeholder="Select Marking" /></SelectTrigger>
-                                            <SelectContent>{couriers.map(c => <SelectItem key={c.id} value={c.marking}>{c.marking} ({c.name})</SelectItem>)}</SelectContent>
+                                            <SelectContent>{[...new Set(couriers.map(c => c.marking))].filter(Boolean).map((m, i) => <SelectItem key={`${m}-${i}`} value={m}>{m}</SelectItem>)}</SelectContent>
                                         </Select>
                                     </div>
                                     <div className="grid gap-2">
                                         <Label htmlFor="jumlahKoli">Jumlah Koli</Label>
-                                        <Input
+                                        <NumericInput
                                             id="jumlahKoli"
-                                            type="number"
-                                            value={currentShipping?.jumlahKoli ?? ''}
-                                            onChange={e => {
-                                                const val = e.target.value;
-                                                handleInputChange('jumlahKoli', val === '' ? 0 : Number(val));
-                                            }}
+                                            value={currentShipping?.jumlahKoli ?? 0}
+                                            onValueChange={value => handleInputChange('jumlahKoli', value)}
                                             disabled={isFormDisabled}
                                         />
                                     </div>
@@ -470,7 +482,7 @@ export default function ShippingPage() {
                                 </div>
 
                                 {/* Section 3 - Auto Aggregated Data */}
-                                {aggregatedData && (
+                                {linkedPOs.length > 0 && aggregatedData && (
                                     <Card className="bg-muted/50">
                                         <CardHeader><CardTitle className="text-lg">Informasi PO Terkait</CardTitle></CardHeader>
                                         <CardContent className="space-y-4 text-sm">
@@ -480,7 +492,6 @@ export default function ShippingPage() {
                                                         <TableHead>No PO</TableHead>
                                                         <TableHead className="text-right">Jumlah Pcs</TableHead>
                                                         <TableHead className="text-right">Jumlah RMB</TableHead>
-                                                        <TableHead className="text-right">Cost per Pcs</TableHead>
                                                     </TableRow>
                                                 </TableHeader>
                                                 <TableBody>
@@ -489,7 +500,6 @@ export default function ShippingPage() {
                                                             <TableCell className="font-medium">{po.poNumber}</TableCell>
                                                             <TableCell className="text-right">{(po.totalPcs || 0).toLocaleString()}</TableCell>
                                                             <TableCell className="text-right">{(po.totalRmb || 0).toLocaleString('zh-CN')}</TableCell>
-                                                            <TableCell className="text-right">{(po.costPerPiece || 0).toLocaleString('id-ID', {style: 'currency', currency: 'IDR'})}</TableCell>
                                                         </TableRow>
                                                     ))}
                                                 </TableBody>
@@ -498,22 +508,34 @@ export default function ShippingPage() {
                                                         <TableCell>Total</TableCell>
                                                         <TableCell className="text-right">{aggregatedData.totalPcs.toLocaleString()}</TableCell>
                                                         <TableCell className="text-right">{aggregatedData.totalRmb.toLocaleString('zh-CN', { style: 'currency', currency: 'CNY' })}</TableCell>
-                                                        <TableCell></TableCell>
                                                     </TableRow>
                                                 </ShadcnTableFooter>
                                             </Table>
-                                            <div className="pt-4">
+                                            <div className="pt-4 space-y-2">
                                                 <div className="font-medium truncate">Link Foto (Auto): <a href={aggregatedData.photoUrls[0]} target='_blank' rel='noopener noreferrer' className="font-normal text-blue-500 hover:underline">{aggregatedData.photoUrls.join(', ')}</a></div>
-                                            </div>
-                                            <div className="font-medium">
-                                                Cost per Pcs (from PO):
-                                                <span className="font-normal text-muted-foreground ml-2">
-                                        {(linkedPOs[0]?.costPerPiece || 0).toLocaleString('id-ID', {style: 'currency', currency: 'IDR'})}
-                                      </span>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                                    <div className="grid gap-2 items-center">
+                                                        <Label>Cost per Pcs (from Ongkir)</Label>
+                                                        <div className='h-10 flex items-center px-3 text-sm text-muted-foreground border rounded-md bg-background'>
+                                                            {newCostPerPiece > 0 ? newCostPerPiece.toLocaleString('id-ID', {style: 'currency', currency: 'IDR'}) : 'Rp 0'}
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </CardContent>
                                     </Card>
                                 )}
+
+                                {unfoundResi.length > 0 && (
+                                    <Alert variant="destructive">
+                                        <AlertTriangle className="h-4 w-4" />
+                                        <AlertTitle>Resi Tidak Ditemukan</AlertTitle>
+                                        <AlertDescription>
+                                            Nomor resi berikut tidak ditemukan di Purchase Order manapun: {unfoundResi.join(', ')}. Silakan hubungi admin.
+                                        </AlertDescription>
+                                    </Alert>
+                                )}
+
 
                                 {/* Section 4 - Admin Input */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 border-t pt-6">
@@ -556,14 +578,10 @@ export default function ShippingPage() {
                                     </div>
                                     <div className="grid gap-2">
                                         <Label htmlFor="harga">Harga (Ongkir)</Label>
-                                        <Input
+                                        <NumericInput
                                             id="harga"
-                                            type="number"
-                                            value={currentShipping?.harga ?? ''}
-                                            onChange={e => {
-                                                const val = e.target.value;
-                                                handleInputChange('harga', val === '' ? 0 : Number(val));
-                                            }}
+                                            value={currentShipping?.harga ?? 0}
+                                            onValueChange={value => handleInputChange('harga', value)}
                                             disabled={isFormDisabled}
                                             placeholder='dalam IDR'
                                         />
@@ -607,7 +625,7 @@ export default function ShippingPage() {
                                 <Button variant="outline" onClick={resetForm} disabled={isFormDisabled}>
                                     Cancel
                                 </Button>
-                                <Button onClick={handleSubmit} disabled={isFormDisabled || (currentShipping?.id ? false : linkedPOs.length === 0)}>
+                                <Button onClick={handleSubmit} disabled={isFormDisabled || linkedPOs.length === 0}>
                                     {isSaving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Saving...</> : `Save Shipping Data`}
                                 </Button>
                             </DialogFooter>
@@ -741,3 +759,5 @@ export default function ShippingPage() {
         </div>
     );
 }
+
+    

@@ -1,4 +1,3 @@
-
 'use client';
 
 import * as React from 'react';
@@ -21,9 +20,25 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import type { Courier } from '@/lib/types';
-import { subscribeToCouriers, addCourier } from '@/lib/services/courierService';
+import { subscribeToCouriers, addCourier, updateCourier, deleteCourier } from '@/lib/services/courierService';
 import {
   Dialog,
   DialogContent,
@@ -33,7 +48,7 @@ import {
   DialogFooter,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { PlusCircle, Loader2, Bike, AlertTriangle } from 'lucide-react';
+import { PlusCircle, Loader2, Bike, AlertTriangle, MoreHorizontal, Edit, Trash2 } from 'lucide-react';
 import { UserContext } from '@/app/dashboard/layout';
 import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
@@ -50,11 +65,11 @@ export default function CouriersPage() {
   // Modal State
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
-  const [newCourierName, setNewCourierName] = React.useState('');
-  const [newCourierCode, setNewCourierCode] = React.useState('');
-  const [newWarehouseAddress, setNewWarehouseAddress] = React.useState('');
-  const [newMarking, setNewMarking] = React.useState('');
-  const [newContactPerson, setNewContactPerson] = React.useState('');
+  const [currentCourier, setCurrentCourier] = React.useState<Partial<Courier> | null>(null);
+
+  // Delete Confirmation State
+  const [isDeleteAlertOpen, setIsDeleteAlertOpen] = React.useState(false);
+  const [courierToDelete, setCourierToDelete] = React.useState<Courier | null>(null);
 
 
   // Pagination state
@@ -76,6 +91,7 @@ export default function CouriersPage() {
         setLoading(false);
       },
       (error) => {
+        console.error("Error fetching couriers:", error);
         toast({
           title: 'Error fetching couriers',
           description: error.message,
@@ -88,12 +104,13 @@ export default function CouriersPage() {
     return () => unsubscribe();
   }, [toast, storeId]);
 
-  const resetModal = () => {
-    setNewCourierName('');
-    setNewCourierCode('');
-    setNewWarehouseAddress('');
-    setNewMarking('');
-    setNewContactPerson('');
+  const openModal = (courier: Partial<Courier> | null = null) => {
+    setCurrentCourier(courier || {});
+    setIsModalOpen(true);
+  };
+  
+  const closeModal = () => {
+    setCurrentCourier(null);
     setIsModalOpen(false);
   };
 
@@ -103,7 +120,7 @@ export default function CouriersPage() {
       toast({ title: 'Permission Denied', variant: 'destructive' });
       return;
     }
-    if (!newCourierName || !newCourierCode) {
+    if (!currentCourier || !currentCourier.name || !currentCourier.courierCode) {
       toast({ title: 'Courier Name and Code are required.', variant: 'destructive' });
       return;
     }
@@ -114,22 +131,49 @@ export default function CouriersPage() {
 
     setIsSaving(true);
     try {
-      await addCourier({ 
-        name: newCourierName, 
-        courierCode: newCourierCode,
-        warehouseAddress: newWarehouseAddress,
-        marking: newMarking,
-        contactPerson: newContactPerson,
-        storeId 
-      });
-      toast({ title: 'Courier created successfully!' });
-      resetModal();
+        const dataToSave: Partial<Omit<Courier, 'id' | 'createdAt'>> = {
+            name: currentCourier.name,
+            courierCode: currentCourier.courierCode,
+            warehouseAddress: currentCourier.warehouseAddress || '',
+            marking: currentCourier.marking || '',
+            contactPerson: currentCourier.contactPerson || '',
+            storeId,
+        };
+
+        if (currentCourier.id) {
+            await updateCourier(currentCourier.id, dataToSave);
+            toast({ title: 'Courier updated successfully!' });
+        } else {
+            await addCourier(dataToSave as Omit<Courier, 'id' | 'createdAt'>);
+            toast({ title: 'Courier created successfully!' });
+        }
+        closeModal();
     } catch (error) {
-      toast({ title: 'Error creating courier', variant: 'destructive' });
+      console.error(error);
+      toast({ title: `Error ${currentCourier.id ? 'updating' : 'creating'} courier`, variant: 'destructive' });
     } finally {
       setIsSaving(false);
     }
   };
+
+  const openDeleteDialog = (courier: Courier) => {
+    setCourierToDelete(courier);
+    setIsDeleteAlertOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!courierToDelete) return;
+    try {
+      await deleteCourier(courierToDelete.id);
+      toast({ title: 'Courier deleted successfully' });
+      setIsDeleteAlertOpen(false);
+      setCourierToDelete(null);
+    } catch (error) {
+      console.error(error);
+      toast({ title: 'Error deleting courier', variant: 'destructive' });
+    }
+  };
+
 
   // Pagination Logic
   const totalPages = Math.ceil(couriers.length / ROWS_PER_PAGE);
@@ -194,91 +238,10 @@ export default function CouriersPage() {
           </p>
         </div>
         {(permissions?.canManageCouriers || permissions?.hasFullAccess) && (
-            <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-            <DialogTrigger asChild>
-                <Button disabled={!canPerformActions}>
-                <PlusCircle className="mr-2 h-4 w-4" />
-                Add New Courier
-                </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-lg">
-                <form onSubmit={handleSaveCourier}>
-                <DialogHeader>
-                    <DialogTitle>Add New Courier</DialogTitle>
-                    <DialogDescription>
-                    Create a new courier for your currently selected store.
-                    </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-4 py-6">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="grid gap-2">
-                        <Label htmlFor="courier-name">Courier Name</Label>
-                        <Input
-                            id="courier-name"
-                            value={newCourierName}
-                            onChange={(e) => setNewCourierName(e.target.value)}
-                            placeholder="e.g., JNE Express"
-                            disabled={isSaving}
-                            required
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="courier-code">Courier Code</Label>
-                        <Input
-                            id="courier-code"
-                            value={newCourierCode}
-                            onChange={(e) => setNewCourierCode(e.target.value)}
-                            placeholder="e.g., JNE"
-                            disabled={isSaving}
-                            required
-                        />
-                      </div>
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="warehouse-address">Warehouse Address</Label>
-                      <Textarea
-                          id="warehouse-address"
-                          value={newWarehouseAddress}
-                          onChange={(e) => setNewWarehouseAddress(e.target.value)}
-                          placeholder="e.g., Jl. Tomang Raya No. 11"
-                          disabled={isSaving}
-                      />
-                    </div>
-                     <div className="grid grid-cols-2 gap-4">
-                        <div className="grid gap-2">
-                        <Label htmlFor="marking">Marking</Label>
-                        <Input
-                            id="marking"
-                            value={newMarking}
-                            onChange={(e) => setNewMarking(e.target.value)}
-                            placeholder="e.g., TGR"
-                            disabled={isSaving}
-                        />
-                        </div>
-                        <div className="grid gap-2">
-                        <Label htmlFor="contact-person">Contact Person</Label>
-                        <Input
-                            id="contact-person"
-                            value={newContactPerson}
-                            onChange={(e) => setNewContactPerson(e.target.value)}
-                            placeholder="e.g., Budi (0812...)"
-                            disabled={isSaving}
-                        />
-                        </div>
-                    </div>
-                </div>
-                <DialogFooter>
-                    <Button variant="outline" type="button" onClick={resetModal} disabled={isSaving}>
-                    Cancel
-                    </Button>
-                    <Button type="submit" disabled={isSaving}>
-                    {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Save Courier
-                    </Button>
-                </DialogFooter>
-                </form>
-            </DialogContent>
-            </Dialog>
+            <Button disabled={!canPerformActions} onClick={() => openModal()}>
+              <PlusCircle className="mr-2 h-4 w-4" />
+              Add New Courier
+            </Button>
         )}
       </div>
 
@@ -303,18 +266,19 @@ export default function CouriersPage() {
                 <TableHead>Marking</TableHead>
                 <TableHead>Contact Person</TableHead>
                 <TableHead>Created At</TableHead>
+                <TableHead className='text-right'>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-24 text-center">
+                  <TableCell colSpan={7} className="h-24 text-center">
                     <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
                   </TableCell>
                 </TableRow>
               ) : paginatedCouriers.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-24 text-center">
+                  <TableCell colSpan={7} className="h-24 text-center">
                     No couriers found. Add a new courier to get started.
                   </TableCell>
                 </TableRow>
@@ -328,6 +292,28 @@ export default function CouriersPage() {
                     <TableCell className="text-muted-foreground">{courier.contactPerson}</TableCell>
                     <TableCell>
                       {courier.createdAt?.toDate().toLocaleDateString()}
+                    </TableCell>
+                    <TableCell className="text-right">
+                        {(permissions?.canManageCouriers || permissions?.hasFullAccess) && (
+                             <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => openModal(courier)}>
+                                    <Edit className="mr-2 h-4 w-4" /> Edit
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                    className="text-destructive"
+                                    onClick={() => openDeleteDialog(courier)}
+                                >
+                                    <Trash2 className="mr-2 h-4 w-4" /> Delete
+                                </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        )}
                     </TableCell>
                   </TableRow>
                 ))
@@ -359,6 +345,104 @@ export default function CouriersPage() {
             )}
         </CardFooter>
       </Card>
+
+      {/* Add/Edit Modal */}
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent className="sm:max-w-lg">
+            <form onSubmit={handleSaveCourier}>
+            <DialogHeader>
+                <DialogTitle>{currentCourier?.id ? 'Edit' : 'Add New'} Courier</DialogTitle>
+                <DialogDescription>
+                {currentCourier?.id ? 'Update the details for this courier.' : 'Create a new courier for your currently selected store.'}
+                </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-6">
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                    <Label htmlFor="courier-name">Courier Name</Label>
+                    <Input
+                        id="courier-name"
+                        value={currentCourier?.name || ''}
+                        onChange={(e) => setCurrentCourier(prev => ({...prev, name: e.target.value}))}
+                        placeholder="e.g., JNE Express"
+                        disabled={isSaving}
+                        required
+                    />
+                    </div>
+                    <div className="grid gap-2">
+                    <Label htmlFor="courier-code">Courier Code</Label>
+                    <Input
+                        id="courier-code"
+                        value={currentCourier?.courierCode || ''}
+                        onChange={(e) => setCurrentCourier(prev => ({...prev, courierCode: e.target.value}))}
+                        placeholder="e.g., JNE"
+                        disabled={isSaving}
+                        required
+                    />
+                    </div>
+                </div>
+                <div className="grid gap-2">
+                    <Label htmlFor="warehouse-address">Warehouse Address</Label>
+                    <Textarea
+                        id="warehouse-address"
+                        value={currentCourier?.warehouseAddress || ''}
+                        onChange={(e) => setCurrentCourier(prev => ({...prev, warehouseAddress: e.target.value}))}
+                        placeholder="e.g., Jl. Tomang Raya No. 11"
+                        disabled={isSaving}
+                    />
+                </div>
+                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                    <Label htmlFor="marking">Marking</Label>
+                    <Input
+                        id="marking"
+                        value={currentCourier?.marking || ''}
+                        onChange={(e) => setCurrentCourier(prev => ({...prev, marking: e.target.value}))}
+                        placeholder="e.g., TGR"
+                        disabled={isSaving}
+                    />
+                    </div>
+                    <div className="grid gap-2">
+                    <Label htmlFor="contact-person">Contact Person</Label>
+                    <Input
+                        id="contact-person"
+                        value={currentCourier?.contactPerson || ''}
+                        onChange={(e) => setCurrentCourier(prev => ({...prev, contactPerson: e.target.value}))}
+                        placeholder="e.g., Budi (0812...)"
+                        disabled={isSaving}
+                    />
+                    </div>
+                </div>
+            </div>
+            <DialogFooter>
+                <Button variant="outline" type="button" onClick={closeModal} disabled={isSaving}>
+                Cancel
+                </Button>
+                <Button type="submit" disabled={isSaving}>
+                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Save Courier
+                </Button>
+            </DialogFooter>
+            </form>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteAlertOpen} onOpenChange={setIsDeleteAlertOpen}>
+          <AlertDialogContent>
+              <AlertDialogHeader>
+                  <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                      This action cannot be undone. This will permanently delete the courier "{courierToDelete?.name}".
+                  </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleConfirmDelete} className='bg-destructive text-destructive-foreground hover:bg-destructive/90'>Delete</AlertDialogAction>
+              </AlertDialogFooter>
+          </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   );
 }

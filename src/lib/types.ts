@@ -141,6 +141,7 @@ export type PurchaseOrder = {
   totalPcs: number;
   totalRmb: number;
   exchangeRate: number;
+  totalPembelianIdr?: number; // New optional field
   
   marking: string; 
   

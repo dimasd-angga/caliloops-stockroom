@@ -8,6 +8,9 @@ import {
   orderBy,
   Timestamp,
   where,
+  doc,
+  updateDoc,
+  deleteDoc,
 } from 'firebase/firestore';
 import type { Courier } from '../types';
 
@@ -50,4 +53,14 @@ export const addCourier = async (
   };
   const docRef = await addDoc(couriersCollection, newCourier);
   return docRef.id;
+};
+
+export const updateCourier = async (id: string, data: Partial<Omit<Courier, 'id' | 'createdAt'>>) => {
+    const courierDoc = doc(firestore, 'couriers', id);
+    await updateDoc(courierDoc, data);
+};
+
+export const deleteCourier = async (id: string) => {
+    const courierDoc = doc(firestore, 'couriers', id);
+    await deleteDoc(courierDoc);
 };

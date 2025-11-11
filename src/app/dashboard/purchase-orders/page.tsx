@@ -284,6 +284,7 @@ export default function PurchaseOrdersPage() {
                     <TableHead>PO Number</TableHead>
                     <TableHead>Order Date</TableHead>
                     <TableHead>Supplier</TableHead>
+                    <TableHead>Status</TableHead>
                     <TableHead>Total Pcs</TableHead>
                     <TableHead>Total RMB</TableHead>
                     <TableHead>Note</TableHead>
@@ -299,7 +300,6 @@ export default function PurchaseOrdersPage() {
                     <TableHead>Ada Refund?</TableHead>
                     <TableHead>Jml Refund (Yuan)</TableHead>
                     <TableHead>Supplier OK?</TableHead>
-                    <TableHead>Status</TableHead>
                     <TableHead>Last Updated</TableHead>
                     <TableHead className='text-right'>Actions</TableHead>
                 </TableRow>
@@ -322,7 +322,10 @@ export default function PurchaseOrdersPage() {
                     <TableRow key={po.id}>
                         <TableCell className="font-medium">{po.poNumber}</TableCell>
                         <TableCell>{format(po.orderDate.toDate(), 'dd MMM yyyy')}</TableCell>
-                        <TableCell>{po.supplierName}</TableCell>
+                        <TableCell className="whitespace-nowrap">{po.supplierName}</TableCell>
+                        <TableCell>
+                            <Badge variant={getStatusVariant(po.status)} className="whitespace-nowrap">{po.status}</Badge>
+                        </TableCell>
                         <TableCell>{po.totalPcs}</TableCell>
                         <TableCell>{po.totalRmb.toLocaleString('zh-CN')}</TableCell>
                         <TableCell className="max-w-xs truncate">{po.shippingNote}</TableCell>
@@ -338,9 +341,6 @@ export default function PurchaseOrdersPage() {
                         <TableCell><YesNo value={po.hasRefund} /></TableCell>
                         <TableCell>{po.refundAmountYuan?.toLocaleString('zh-CN')}</TableCell>
                         <TableCell><YesNo value={po.isSupplierRefundApproved} /></TableCell>
-                        <TableCell>
-                            <Badge variant={getStatusVariant(po.status)}>{po.status}</Badge>
-                        </TableCell>
                         <TableCell>
                         {format(po.updatedAt.toDate(), 'dd MMM yyyy, HH:mm')}
                         </TableCell>

@@ -16,6 +16,7 @@ import {
   writeBatch,
   deleteDoc,
   increment,
+  limit,
 } from 'firebase/firestore';
 import type { PurchaseOrder, Shipping, Supplier, Refund } from '../types';
 
@@ -49,58 +50,58 @@ export const subscribeToPurchaseOrders = (
 
             const suppliersMap = new Map(suppliersSnapshot.docs.map(doc => [doc.id, doc.data() as Supplier]));
             
-            const shippingData = shippingSnapshot.docs.map(doc => doc.data() as Shipping);
-            const allShippingResi = new Set(shippingData.flatMap(s => Array.isArray(s.noResi) ? s.noResi : [s.noResi]).filter(Boolean));
+            const shippingData = shippingSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Shipping));
+            
+            const resiStatusMap = new Map<string, 'RECEIVED' | 'SHIPPING'>();
+            shippingData.forEach(s => {
+                const resiList = Array.isArray(s.noResi) ? s.noResi : [s.noResi].filter(Boolean);
+                resiList.forEach(resi => {
+                    resiStatusMap.set(resi, s.status);
+                });
+            });
 
 
             const refundsMap = new Map<string, Refund>();
             refundSnapshot.forEach(doc => {
-                const refund = doc.data() as Refund;
+                const refund = {id: doc.id, ...doc.data()} as Refund;
                 refundsMap.set(refund.poId, refund);
             });
 
 
             const purchaseOrders = poSnapshot.docs.map((doc) => {
-                const poData = doc.data() as PurchaseOrder;
+                const poData = { id: doc.id, ...doc.data() } as PurchaseOrder;
                 const supplier = suppliersMap.get(poData.supplierId);
                 const refund = refundsMap.get(doc.id);
                 
-                // --- Dynamic Status Logic ---
                 let dynamicStatus: PurchaseOrder['status'] = poData.status; 
                 const poTrackingNumbers = poData.trackingNumber || [];
+                const totalResiInPo = poTrackingNumbers.length;
                 
-                if (poTrackingNumbers.length > 0) {
-                    const foundResiCount = poTrackingNumbers.filter(tn => allShippingResi.has(tn)).length;
-                    
-                    if (foundResiCount === 0) {
-                        dynamicStatus = 'INPUTTED';
-                    } else if (foundResiCount < poTrackingNumbers.length) {
-                        dynamicStatus = 'IN SHIPPING (PARTIAL)';
-                    } else {
-                        dynamicStatus = 'IN SHIPPING';
-                    }
-                } else {
-                    dynamicStatus = 'INPUTTED';
-                }
-
-                // --- Calculate total shipping cost for this PO ---
-                let totalShippingCost = 0;
-                if (poData.trackingNumber && poData.trackingNumber.length > 0) {
-                    shippingData.forEach(shippingEntry => {
-                        const resiList = Array.isArray(shippingEntry.noResi) ? shippingEntry.noResi : [shippingEntry.noResi].filter(Boolean);
-                        const hasMatchingResi = resiList.some(resi => poData.trackingNumber.includes(resi));
-                        if (hasMatchingResi) {
-                            totalShippingCost += shippingEntry.harga || 0;
+                if (poData.status !== 'DONE') {
+                     if (totalResiInPo > 0) {
+                        const associatedShippingStatuses = poTrackingNumbers.map(tn => resiStatusMap.get(tn)).filter(Boolean);
+                        const receivedCount = associatedShippingStatuses.filter(s => s === 'RECEIVED').length;
+                        
+                        if (receivedCount === totalResiInPo) {
+                            dynamicStatus = 'RECEIVED';
+                        } else if (receivedCount > 0) {
+                            dynamicStatus = 'RECEIVED (PARTIAL)';
+                        } else if (associatedShippingStatuses.length === totalResiInPo) {
+                            dynamicStatus = 'IN SHIPPING';
+                        } else if (associatedShippingStatuses.length > 0) {
+                            dynamicStatus = 'IN SHIPPING (PARTIAL)';
+                        } else {
+                            dynamicStatus = 'INPUTTED';
                         }
-                    });
+                    } else {
+                        dynamicStatus = 'INPUTTED';
+                    }
                 }
-
-
+                
                 return {
                     id: doc.id,
                     ...poData,
-                    status: dynamicStatus, 
-                    shippingCost: totalShippingCost, // Override with calculated shipping cost
+                    status: dynamicStatus,
                     supplierName: supplier?.name || 'Unknown Supplier',
                     supplierCode: supplier?.supplierCode || 'N/A',
                     hasRefund: !!refund,
@@ -138,7 +139,7 @@ export const getPurchaseOrderWithDetails = async (poId: string): Promise<(Purcha
     // Fetch PO and its potential refund simultaneously
     const [poDocSnap, refundSnapshot] = await Promise.all([
         getDoc(poDocRef),
-        getDocs(query(refundsCollection, where('poId', '==', poId)))
+        getDocs(query(refundsCollection, where('poId', '==', poId), limit(1)))
     ]);
 
     if (!poDocSnap.exists()) return null;
@@ -158,26 +159,6 @@ export const getPurchaseOrderWithDetails = async (poId: string): Promise<(Purcha
     if (!refundSnapshot.empty) {
         const refundDoc = refundSnapshot.docs[0];
         poData.refund = { id: refundDoc.id, ...refundDoc.data() } as Refund;
-    }
-
-    // Calculate total shipping cost
-    if (poData.trackingNumber && poData.trackingNumber.length > 0 && poData.storeId) {
-        const shippingQuery = query(
-            shippingCollection,
-            where('storeId', '==', poData.storeId),
-            where('noResi', 'array-contains-any', poData.trackingNumber)
-        );
-        const shippingSnapshot = await getDocs(shippingQuery);
-        let totalShippingCost = 0;
-        shippingSnapshot.forEach(shippingDoc => {
-            const shippingEntry = shippingDoc.data() as Shipping;
-            // Ensure noResi is an array before checking
-            const resiList = Array.isArray(shippingEntry.noResi) ? shippingEntry.noResi : [shippingEntry.noResi].filter(Boolean);
-            if (resiList.some(resi => poData.trackingNumber.includes(resi))) {
-                 totalShippingCost += shippingEntry.harga || 0;
-            }
-        });
-        poData.shippingCost = totalShippingCost;
     }
     
     return poData;
@@ -213,19 +194,32 @@ export const findPOsByTrackingNumbers = async (storeId: string, trackingNumbers:
     return poResults;
 };
 
-export const updatePOStatusAndShippingCost = async (poIds: string[], shippingCost: number) => {
+export const updatePOStatusAndShippingCost = async (poIds: string[], newCostPerPiece: number) => {
     const batch = writeBatch(firestore);
 
-    poIds.forEach(id => {
+    for (const id of poIds) {
         const poRef = doc(firestore, 'purchaseOrders', id);
-        // We no longer set status to 'SHIPPING' here, as it's now dynamic.
-        // We also no longer set a single shippingCost, as it is now aggregated.
-        // This function could be deprecated or changed to only trigger a re-evaluation if needed.
-        // For now, we'll just update the updatedAt timestamp to trigger a refresh on the client.
-        batch.update(poRef, {
-            updatedAt: Timestamp.now(),
-        });
-    });
+        try {
+            const poDoc = await getDoc(poRef);
+            if (poDoc.exists()) {
+                const currentData = poDoc.data() as PurchaseOrder;
+                const currentCost = currentData.costPerPiece || 0;
+
+                const updateData: any = {
+                    updatedAt: Timestamp.now(),
+                };
+
+                // Only update if the new cost is higher
+                if (newCostPerPiece > currentCost) {
+                    updateData.costPerPiece = newCostPerPiece;
+                }
+                
+                batch.update(poRef, updateData);
+            }
+        } catch (error) {
+            console.error(`Failed to get PO doc ${id} for update:`, error);
+        }
+    }
 
     await batch.commit();
 }
@@ -265,16 +259,8 @@ export const addOrUpdatePurchaseOrder = async (
   poData: Partial<PurchaseOrder> & { storeId: string }
 ): Promise<string> => {
   
-  const totalPembelian = (poData.totalRmb || 0) * (poData.exchangeRate || 0);
-  const totalOngkir = poData.shippingCost || 0;
-  
-  if (poData.totalPcs && poData.totalPcs > 0) {
-    poData.costPerPiece = (totalPembelian + totalOngkir) / poData.totalPcs;
-  } else {
-    poData.costPerPiece = 0;
-  }
-  
-  const finalPoData = { ...poData };
+  const totalPembelian = poData.totalPembelianIdr !== undefined ? poData.totalPembelianIdr : (poData.totalRmb || 0) * (poData.exchangeRate || 0);
+  const finalPoData = { ...poData, totalPembelianIdr: totalPembelian, costPerPiece: poData.costPerPiece || 0 };
 
   if (poData.id) {
     const poRef = doc(firestore, 'purchaseOrders', poData.id);

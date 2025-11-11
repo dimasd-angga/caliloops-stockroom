@@ -71,6 +71,7 @@ import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
 import { usePDF } from 'react-to-pdf';
+import { NumericInput } from '@/components/ui/numeric-input';
 
 const units: Unit[] = ['pcs', 'box', 'carton', 'pallet'];
 
@@ -264,11 +265,7 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
     ) => {
         const newQuantities = [...quantitiesPerPack];
         if (field === 'quantity') {
-            const stringValue = value as string;
-            // Allow only numbers and empty string
-            if (/^[0-9]*$/.test(stringValue)) {
-                newQuantities[index].quantity = stringValue === '' ? 0 : parseInt(stringValue, 10);
-            }
+            newQuantities[index].quantity = Number(value) || 0;
         } else if (field === 'unit') {
             newQuantities[index].unit = value as Unit;
         } else {
@@ -643,7 +640,7 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
                                                 <Label>Quantity per Pack</Label>
                                                 {quantitiesPerPack.map((pack, index) => (
                                                     <div key={index} className="flex items-center gap-2">
-                                                        <Input type="text" inputMode="numeric" pattern="[0-9]*" value={pack.quantity === 0 ? '' : pack.quantity} onChange={(e) => handleQuantityChange(index, 'quantity', e.target.value)} placeholder="Qty" className="w-24" disabled={isSavingShipment}/>
+                                                        <NumericInput value={pack.quantity} onValueChange={(value) => handleQuantityChange(index, 'quantity', value)} placeholder="Qty" className="w-24" disabled={isSavingShipment}/>
                                                         <Select value={pack.unit} onValueChange={(value) => handleQuantityChange(index, 'unit', value)} disabled={isSavingShipment}>
                                                             <SelectTrigger className="w-[120px]"><SelectValue placeholder="Unit" /></SelectTrigger>
                                                             <SelectContent>
@@ -874,3 +871,5 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
         </div>
     );
 }
+
+    

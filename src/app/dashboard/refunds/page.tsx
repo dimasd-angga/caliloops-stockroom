@@ -47,6 +47,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Calendar as CalendarIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Timestamp } from 'firebase/firestore';
+import { NumericInput } from '@/components/ui/numeric-input';
 
 const ROWS_PER_PAGE = 10;
 
@@ -84,11 +85,13 @@ export default function RefundsPage() {
     setLoading(true);
 
     const unsubscribeRefunds = subscribeToRefunds(storeId, setRefunds, (error) => {
-        toast({ title: 'Error fetching refunds', variant: 'destructive' });
+        console.error("Error fetching refunds:", error);
+        toast({ title: 'Error fetching refunds', description: error.message, variant: 'destructive' });
     });
 
     const unsubscribePOs = subscribeToPurchaseOrders(storeId, setPurchaseOrders, (error) => {
-        toast({ title: 'Error fetching purchase orders', variant: 'destructive' });
+        console.error("Error fetching purchase orders:", error);
+        toast({ title: 'Error fetching purchase orders', description: error.message, variant: 'destructive' });
     });
 
     Promise.all([new Promise(res => setTimeout(res, 500))]).then(() => setLoading(false));
@@ -182,7 +185,8 @@ export default function RefundsPage() {
         }
         resetModal();
     } catch (error) {
-      toast({ title: `Error ${currentRefund.id ? 'updating' : 'creating'} refund`, variant: 'destructive' });
+      console.error("Error saving refund:", error);
+      toast({ title: `Error ${currentRefund.id ? 'updating' : 'creating'} refund`, description: (error as Error).message, variant: 'destructive' });
     } finally {
       setIsSaving(false);
     }
@@ -345,7 +349,7 @@ export default function RefundsPage() {
                 <div className="grid gap-4 py-6">
                     <div className="grid gap-2">
                         <Label htmlFor="poNumber">Purchase Order</Label>
-                        <Select onValueChange={handlePoChange} value={currentRefund?.poId} disabled={!!currentRefund?.id}>
+                        <Select onValueChange={handlePoChange} value={currentRefund?.poId} disabled={!!currentRefund?.id} required>
                             <SelectTrigger id="poNumber">
                                 <SelectValue placeholder="Select a Purchase Order" />
                             </SelectTrigger>
@@ -370,7 +374,7 @@ export default function RefundsPage() {
                      <div className="grid grid-cols-2 gap-4">
                         <div className="grid gap-2">
                             <Label htmlFor="refundAmount">Refund Amount (RMB)</Label>
-                            <Input id="refundAmount" type="number" value={currentRefund?.refundAmount || ''} onChange={(e) => setCurrentRefund(p => ({...p, refundAmount: parseFloat(e.target.value) || 0}))} disabled={isSaving} required />
+                            <NumericInput id="refundAmount" value={currentRefund?.refundAmount || 0} onValueChange={(value) => setCurrentRefund(p => ({...p, refundAmount: value}))} disabled={isSaving} required />
                         </div>
                         <div className="grid gap-2">
                             <Label htmlFor="deductedDate">Deducted Date</Label>
@@ -411,3 +415,5 @@ export default function RefundsPage() {
     </div>
   );
 }
+
+    
