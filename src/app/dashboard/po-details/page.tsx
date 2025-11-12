@@ -30,14 +30,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, AlertTriangle, Search, ListChecks } from 'lucide-react';
+import { Loader2, AlertTriangle, Search, ListChecks, ChevronDown } from 'lucide-react';
 import { UserContext } from '@/app/dashboard/layout';
 import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Badge, badgeVariants } from '@/components/ui/badge';
 import { format } from 'date-fns';
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Button } from '@/components/ui/button';
+
 
 const ROWS_PER_PAGE = 20;
+const ALL_STATUSES: PoDetailRow['status'][] = ['INPUTTED', 'SHIPPING', 'RECEIVED'];
+
 
 type PoDetailRow = {
     poId: string;
@@ -63,7 +68,8 @@ export default function PoDetailsPage() {
 
   // Search and Filter State
   const [searchTerm, setSearchTerm] = React.useState('');
-  const [statusFilter, setStatusFilter] = React.useState('all');
+  const [selectedStatuses, setSelectedStatuses] = React.useState<Set<string>>(new Set());
+
 
   // Pagination state
   const [currentPage, setCurrentPage] = React.useState(1);
@@ -163,9 +169,11 @@ export default function PoDetailsPage() {
 
   const filteredDetails = React.useMemo(() => {
     let tempDetails = allPoDetails;
-    if (statusFilter !== 'all') {
-      tempDetails = tempDetails.filter(d => d.status === statusFilter);
+    
+    if (selectedStatuses.size > 0) {
+      tempDetails = tempDetails.filter(d => selectedStatuses.has(d.status));
     }
+
     if (searchTerm) {
       const lowercasedTerm = searchTerm.toLowerCase();
       tempDetails = tempDetails.filter(d => 
@@ -177,7 +185,7 @@ export default function PoDetailsPage() {
       );
     }
     return tempDetails;
-  }, [allPoDetails, searchTerm, statusFilter]);
+  }, [allPoDetails, searchTerm, selectedStatuses]);
 
   // Pagination Logic
   const totalPages = Math.ceil(filteredDetails.length / ROWS_PER_PAGE);
@@ -195,7 +203,19 @@ export default function PoDetailsPage() {
   
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, statusFilter]);
+  }, [searchTerm, selectedStatuses]);
+
+  const handleStatusFilterChange = (status: PoDetailRow['status'], checked: boolean) => {
+    setSelectedStatuses(prev => {
+        const newSet = new Set(prev);
+        if (checked) {
+            newSet.add(status);
+        } else {
+            newSet.delete(status);
+        }
+        return newSet;
+    });
+  }
 
 
   const getPaginationItems = () => {
@@ -271,17 +291,31 @@ export default function PoDetailsPage() {
                           onChange={(e) => setSearchTerm(e.target.value)}
                       />
                   </div>
-                   <Select value={statusFilter} onValueChange={setStatusFilter}>
-                      <SelectTrigger className="w-[180px]">
-                          <SelectValue placeholder="Filter by status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                          <SelectItem value="all">All Statuses</SelectItem>
-                          <SelectItem value="INPUTTED">Inputted</SelectItem>
-                          <SelectItem value="SHIPPING">Shipping</SelectItem>
-                          <SelectItem value="RECEIVED">Received</SelectItem>
-                      </SelectContent>
-                  </Select>
+                  <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                          <Button variant="outline" className="w-[240px] justify-between">
+                              {selectedStatuses.size === 0
+                              ? "Filter by status..."
+                              : selectedStatuses.size === ALL_STATUSES.length
+                              ? "All Statuses"
+                              : `${selectedStatuses.size} selected`}
+                              <ChevronDown className="h-4 w-4" />
+                          </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="w-56">
+                          <DropdownMenuLabel>Filter by Status</DropdownMenuLabel>
+                          <DropdownMenuSeparator />
+                          {ALL_STATUSES.map(status => (
+                              <DropdownMenuCheckboxItem
+                                  key={status}
+                                  checked={selectedStatuses.has(status)}
+                                  onCheckedChange={(checked) => handleStatusFilterChange(status, Boolean(checked))}
+                              >
+                                  {status}
+                              </DropdownMenuCheckboxItem>
+                          ))}
+                      </DropdownMenuContent>
+                  </DropdownMenu>
               </div>
             </div>
         </CardHeader>

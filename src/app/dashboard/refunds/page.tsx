@@ -21,9 +21,25 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import type { Refund, PurchaseOrder } from '@/lib/types';
-import { subscribeToRefunds, addRefund, updateRefund } from '@/lib/services/refundService';
+import { subscribeToRefunds, addRefund, updateRefund, deleteRefund } from '@/lib/services/refundService';
 import { subscribeToPurchaseOrders } from '@/lib/services/purchaseOrderService';
 import {
   Dialog,
@@ -34,7 +50,7 @@ import {
   DialogFooter,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { PlusCircle, Loader2, DollarSign, AlertTriangle, Search, Edit } from 'lucide-react';
+import { PlusCircle, Loader2, DollarSign, AlertTriangle, Search, Edit, MoreHorizontal, Trash2 } from 'lucide-react';
 import { UserContext } from '@/app/dashboard/layout';
 import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
@@ -51,6 +67,8 @@ import { NumericInput } from '@/components/ui/numeric-input';
 
 const ROWS_PER_PAGE = 10;
 
+type BooleanFilter = 'all' | 'yes' | 'no';
+
 export default function RefundsPage() {
   const { toast } = useToast();
   const { user, permissions, selectedStoreId } = React.useContext(UserContext);
@@ -62,12 +80,19 @@ export default function RefundsPage() {
 
   // Search and Filter State
   const [searchTerm, setSearchTerm] = React.useState('');
+  const [supplierOkFilter, setSupplierOkFilter] = React.useState<BooleanFilter>('all');
+  const [deductedFilter, setDeductedFilter] = React.useState<BooleanFilter>('all');
+
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
   const [currentRefund, setCurrentRefund] = React.useState<Partial<Refund> | null>(null);
   const [selectedPoDetails, setSelectedPoDetails] = React.useState<PurchaseOrder | null>(null);
+
+  // Delete Confirmation State
+  const [isDeleteAlertOpen, setIsDeleteAlertOpen] = React.useState(false);
+  const [refundToDelete, setRefundToDelete] = React.useState<Refund | null>(null);
 
 
   // Pagination state
@@ -177,7 +202,7 @@ export default function RefundsPage() {
                 refundAmount: currentRefund.refundAmount || 0,
                 isSupplierApproved: currentRefund.isSupplierApproved || false,
                 isDeducted: currentRefund.isDeducted || false,
-                deductedDate: currentRefund.deductedDate,
+                deductedDate: currentRefund.deductedDate || null,
                 notes: currentRefund.notes || '',
             };
             await addRefund(refundData);
@@ -189,6 +214,26 @@ export default function RefundsPage() {
       toast({ title: `Error ${currentRefund.id ? 'updating' : 'creating'} refund`, description: (error as Error).message, variant: 'destructive' });
     } finally {
       setIsSaving(false);
+    }
+  };
+  
+  const openDeleteDialog = (refund: Refund) => {
+    setRefundToDelete(refund);
+    setIsDeleteAlertOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!refundToDelete || !permissions?.canManageRefunds && !permissions?.hasFullAccess) {
+        toast({ title: 'Permission Denied', variant: 'destructive' });
+        return;
+    }
+    try {
+      await deleteRefund(refundToDelete.id);
+      toast({ title: 'Refund deleted successfully' });
+      setIsDeleteAlertOpen(false);
+      setRefundToDelete(null);
+    } catch (error) {
+      toast({ title: 'Error deleting refund', variant: 'destructive' });
     }
   };
 
@@ -206,10 +251,31 @@ export default function RefundsPage() {
   };
 
   const filteredRefunds = React.useMemo(() => {
-    return searchTerm
-      ? refunds.filter(r => r.poNumber.toLowerCase().includes(searchTerm.toLowerCase()) || r.supplierName.toLowerCase().includes(searchTerm.toLowerCase()))
-      : refunds;
-  }, [refunds, searchTerm]);
+    let tempRefunds = [...refunds];
+    
+    // Filter by text search
+    if (searchTerm) {
+      const lowercasedTerm = searchTerm.toLowerCase();
+      tempRefunds = tempRefunds.filter(r => 
+        r.poNumber.toLowerCase().includes(lowercasedTerm) || 
+        r.supplierName.toLowerCase().includes(lowercasedTerm)
+      );
+    }
+
+    // Filter by supplier approval
+    if (supplierOkFilter !== 'all') {
+      const isApproved = supplierOkFilter === 'yes';
+      tempRefunds = tempRefunds.filter(r => r.isSupplierApproved === isApproved);
+    }
+    
+    // Filter by deducted status
+    if (deductedFilter !== 'all') {
+      const isDeducted = deductedFilter === 'yes';
+      tempRefunds = tempRefunds.filter(r => r.isDeducted === isDeducted);
+    }
+
+    return tempRefunds;
+  }, [refunds, searchTerm, supplierOkFilter, deductedFilter]);
 
   const totalPages = Math.ceil(filteredRefunds.length / ROWS_PER_PAGE);
   const paginatedRefunds = React.useMemo(() => {
@@ -219,6 +285,11 @@ export default function RefundsPage() {
   const handlePageChange = (page: number) => {
     if (page >= 1 && page <= totalPages) setCurrentPage(page);
   };
+  
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, supplierOkFilter, deductedFilter]);
+
 
   const canPerformActions = user?.email === 'superadmin@caliloops.com' ? !!selectedStoreId : !!user?.storeId;
 
@@ -255,15 +326,37 @@ export default function RefundsPage() {
         <CardHeader>
             <div className='flex flex-col md:flex-row gap-4 md:items-center md:justify-between'>
               <CardTitle>All Refunds</CardTitle>
-              <div className="relative">
-                  <Search className="absolute left-2.5 top-3 h-4 w-4 text-muted-foreground" />
-                  <Input
-                      type="search"
-                      placeholder="Search by PO number or Supplier..."
-                      className="w-full pl-8 sm:w-[300px]"
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                  />
+              <div className="flex flex-col sm:flex-row gap-2">
+                  <div className="relative">
+                      <Search className="absolute left-2.5 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                          type="search"
+                          placeholder="Search by PO number or Supplier..."
+                          className="w-full pl-8 sm:w-[250px]"
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                      />
+                  </div>
+                  <Select value={supplierOkFilter} onValueChange={(val) => setSupplierOkFilter(val as BooleanFilter)}>
+                        <SelectTrigger className="w-full sm:w-[150px]">
+                            <SelectValue placeholder="Supplier OK?" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All (Supplier OK?)</SelectItem>
+                            <SelectItem value="yes">Yes</SelectItem>
+                            <SelectItem value="no">No</SelectItem>
+                        </SelectContent>
+                    </Select>
+                    <Select value={deductedFilter} onValueChange={(val) => setDeductedFilter(val as BooleanFilter)}>
+                        <SelectTrigger className="w-full sm:w-[150px]">
+                            <SelectValue placeholder="Deducted?" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All (Deducted?)</SelectItem>
+                            <SelectItem value="yes">Yes</SelectItem>
+                            <SelectItem value="no">No</SelectItem>
+                        </SelectContent>
+                    </Select>
               </div>
             </div>
         </CardHeader>
@@ -278,7 +371,7 @@ export default function RefundsPage() {
                 <TableHead>Supplier OK?</TableHead>
                 <TableHead>Deducted?</TableHead>
                 <TableHead>Deducted Date</TableHead>
-                <TableHead>Actions</TableHead>
+                <TableHead className='text-right'>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -304,10 +397,24 @@ export default function RefundsPage() {
                     <TableCell>{refund.isSupplierApproved ? 'Yes' : 'No'}</TableCell>
                     <TableCell>{refund.isDeducted ? 'Yes' : 'No'}</TableCell>
                     <TableCell>{refund.deductedDate ? format(refund.deductedDate.toDate(), 'dd MMM yyyy') : 'N/A'}</TableCell>
-                    <TableCell>
-                        <Button variant="outline" size="sm" onClick={() => openModal(refund)}>
-                            <Edit className='mr-2 h-4 w-4' /> Edit
-                        </Button>
+                    <TableCell className='text-right'>
+                        {(permissions?.canManageRefunds || permissions?.hasFullAccess) && (
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon">
+                                        <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => openModal(refund)}>
+                                        <Edit className="mr-2 h-4 w-4" /> Edit
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem className="text-destructive" onClick={() => openDeleteDialog(refund)}>
+                                        <Trash2 className="mr-2 h-4 w-4" /> Delete
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        )}
                     </TableCell>
                   </TableRow>
                 ))
@@ -327,9 +434,9 @@ export default function RefundsPage() {
             {totalPages > 1 && (
                 <Pagination>
                     <PaginationContent>
-                        <PaginationItem><PaginationPrevious onClick={() => handlePageChange(currentPage - 1)} /></PaginationItem>
+                        <PaginationItem><PaginationPrevious onClick={() => handlePageChange(currentPage - 1)} aria-disabled={currentPage === 1} /></PaginationItem>
                         <PaginationItem>...</PaginationItem>
-                        <PaginationItem><PaginationNext onClick={() => handlePageChange(currentPage + 1)} /></PaginationItem>
+                        <PaginationItem><PaginationNext onClick={() => handlePageChange(currentPage + 1)} aria-disabled={currentPage === totalPages} /></PaginationItem>
                     </PaginationContent>
                 </Pagination>
             )}
@@ -412,8 +519,22 @@ export default function RefundsPage() {
             </form>
         </DialogContent>
       </Dialog>
+      
+      {/* Delete Confirmation Dialog */}
+       <AlertDialog open={isDeleteAlertOpen} onOpenChange={setIsDeleteAlertOpen}>
+          <AlertDialogContent>
+              <AlertDialogHeader>
+                  <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                      This action cannot be undone. This will permanently delete the refund for PO "{refundToDelete?.poNumber}".
+                  </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleConfirmDelete} className='bg-destructive text-destructive-foreground hover:bg-destructive/90'>Delete</AlertDialogAction>
+              </AlertDialogFooter>
+          </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
-
-    

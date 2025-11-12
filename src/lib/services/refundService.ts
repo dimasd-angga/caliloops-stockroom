@@ -10,6 +10,7 @@ import {
   orderBy,
   Timestamp,
   where,
+  deleteDoc,
 } from 'firebase/firestore';
 import type { Refund } from '../types';
 
@@ -48,6 +49,7 @@ export const addRefund = async (
 ): Promise<string> => {
   const newRefund = {
     ...refundData,
+    deductedDate: refundData.deductedDate || null,
     createdAt: Timestamp.now(),
     updatedAt: Timestamp.now(),
   };
@@ -60,10 +62,15 @@ export const updateRefund = async (
   refundUpdate: Partial<Omit<Refund, 'id' | 'createdAt'>>
 ): Promise<void> => {
   const refundDoc = doc(firestore, 'refunds', id);
-  await updateDoc(refundDoc, {
+  const updateData = {
     ...refundUpdate,
+    deductedDate: refundUpdate.deductedDate || null,
     updatedAt: Timestamp.now(),
-  });
+  };
+  await updateDoc(refundDoc, updateData);
 };
 
-    
+export const deleteRefund = async (id: string): Promise<void> => {
+    const refundDoc = doc(firestore, 'refunds', id);
+    await deleteDoc(refundDoc);
+};

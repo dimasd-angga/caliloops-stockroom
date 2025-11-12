@@ -32,11 +32,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { PlusCircle, Loader2, FileText, AlertTriangle, Search, ChevronsRight, MoreHorizontal, Edit, Trash2, CheckCircle, XCircle } from 'lucide-react';
+import { PlusCircle, Loader2, FileText, AlertTriangle, Search, ChevronsRight, MoreHorizontal, Edit, Trash2, CheckCircle, XCircle, ChevronDown } from 'lucide-react';
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -58,6 +61,7 @@ import type { VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
 const ROWS_PER_PAGE = 10;
+const ALL_STATUSES: PurchaseOrder['status'][] = ['INPUTTED', 'IN SHIPPING (PARTIAL)', 'IN SHIPPING', 'RECEIVED (PARTIAL)', 'RECEIVED', 'DONE'];
 
 export default function PurchaseOrdersPage() {
   const { toast } = useToast();
@@ -68,7 +72,7 @@ export default function PurchaseOrdersPage() {
 
   // Search and Filter State
   const [searchTerm, setSearchTerm] = React.useState('');
-  const [statusFilter, setStatusFilter] = React.useState('all');
+  const [selectedStatuses, setSelectedStatuses] = React.useState<Set<PurchaseOrder['status']>>(new Set());
 
   // Pagination state
   const [currentPage, setCurrentPage] = React.useState(1);
@@ -124,9 +128,13 @@ export default function PurchaseOrdersPage() {
 
   const filteredPOs = React.useMemo(() => {
     let tempPOs = purchaseOrders;
-    if (statusFilter !== 'all') {
-      tempPOs = tempPOs.filter(po => po.status === statusFilter);
+    
+    // Filter by selected statuses
+    if (selectedStatuses.size > 0) {
+      tempPOs = tempPOs.filter(po => selectedStatuses.has(po.status));
     }
+    
+    // Filter by search term
     if (searchTerm) {
       const lowercasedTerm = searchTerm.toLowerCase();
       tempPOs = tempPOs.filter(po => 
@@ -137,7 +145,7 @@ export default function PurchaseOrdersPage() {
       );
     }
     return tempPOs;
-  }, [purchaseOrders, searchTerm, statusFilter]);
+  }, [purchaseOrders, searchTerm, selectedStatuses]);
 
   // Pagination Logic
   const totalPages = Math.ceil(filteredPOs.length / ROWS_PER_PAGE);
@@ -155,7 +163,7 @@ export default function PurchaseOrdersPage() {
   
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, statusFilter]);
+  }, [searchTerm, selectedStatuses]);
 
   const openDeleteDialog = (po: PurchaseOrder) => {
     setPoToDelete(po);
@@ -209,6 +217,18 @@ export default function PurchaseOrdersPage() {
     return items;
   };
   
+  const handleStatusFilterChange = (status: PurchaseOrder['status'], checked: boolean) => {
+    setSelectedStatuses(prev => {
+        const newSet = new Set(prev);
+        if (checked) {
+            newSet.add(status);
+        } else {
+            newSet.delete(status);
+        }
+        return newSet;
+    });
+  }
+
   const canPerformActions = user?.email === 'superadmin@caliloops.com' ? !!selectedStoreId : !!user?.storeId;
 
   const YesNo = ({ value }: { value?: boolean }) => (
@@ -259,20 +279,31 @@ export default function PurchaseOrdersPage() {
                           onChange={(e) => setSearchTerm(e.target.value)}
                       />
                   </div>
-                   <Select value={statusFilter} onValueChange={setStatusFilter}>
-                      <SelectTrigger className="w-[240px]">
-                          <SelectValue placeholder="Filter by status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                          <SelectItem value="all">All Statuses</SelectItem>
-                          <SelectItem value="INPUTTED">Inputted</SelectItem>
-                          <SelectItem value="IN SHIPPING (PARTIAL)">In Shipping (Partial)</SelectItem>
-                          <SelectItem value="IN SHIPPING">In Shipping</SelectItem>
-                          <SelectItem value="RECEIVED (PARTIAL)">Received (Partial)</SelectItem>
-                          <SelectItem value="RECEIVED">Received</SelectItem>
-                          <SelectItem value="DONE">Done</SelectItem>
-                      </SelectContent>
-                  </Select>
+                   <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="outline" className="w-[240px] justify-between">
+                                {selectedStatuses.size === 0
+                                ? "Filter by status..."
+                                : selectedStatuses.size === ALL_STATUSES.length
+                                ? "All Statuses"
+                                : `${selectedStatuses.size} selected`}
+                                <ChevronDown className="h-4 w-4" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="w-56">
+                            <DropdownMenuLabel>Filter by Status</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            {ALL_STATUSES.map(status => (
+                                <DropdownMenuCheckboxItem
+                                    key={status}
+                                    checked={selectedStatuses.has(status)}
+                                    onCheckedChange={(checked) => handleStatusFilterChange(status, Boolean(checked))}
+                                >
+                                    {status}
+                                </DropdownMenuCheckboxItem>
+                            ))}
+                        </DropdownMenuContent>
+                    </DropdownMenu>
               </div>
             </div>
         </CardHeader>
@@ -287,6 +318,7 @@ export default function PurchaseOrdersPage() {
                     <TableHead>Status</TableHead>
                     <TableHead>Total Pcs</TableHead>
                     <TableHead>Total RMB</TableHead>
+                    <TableHead>Cost per Pcs</TableHead>
                     <TableHead>Note</TableHead>
                     <TableHead>Pcs Brg Lama Diterima</TableHead>
                     <TableHead>Pcs Brg Baru Diterima</TableHead>
@@ -307,13 +339,13 @@ export default function PurchaseOrdersPage() {
                 <TableBody>
                 {loading ? (
                     <TableRow>
-                    <TableCell colSpan={21} className="h-24 text-center">
+                    <TableCell colSpan={22} className="h-24 text-center">
                         <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
                     </TableCell>
                     </TableRow>
                 ) : paginatedPOs.length === 0 ? (
                     <TableRow>
-                    <TableCell colSpan={21} className="h-24 text-center">
+                    <TableCell colSpan={22} className="h-24 text-center">
                         No purchase orders found. Add a new PO to get started.
                     </TableCell>
                     </TableRow>
@@ -328,6 +360,12 @@ export default function PurchaseOrdersPage() {
                         </TableCell>
                         <TableCell>{po.totalPcs}</TableCell>
                         <TableCell>{po.totalRmb.toLocaleString('zh-CN')}</TableCell>
+                        <TableCell>
+                            {(po.costPerPiece && po.costPerPiece > 0) 
+                                ? po.costPerPiece.toLocaleString('id-ID', { style: 'currency', currency: 'IDR' })
+                                : 'N/A'
+                            }
+                        </TableCell>
                         <TableCell className="max-w-xs truncate">{po.shippingNote}</TableCell>
                         <TableCell>{po.totalPcsOldReceived}</TableCell>
                         <TableCell>{po.totalPcsNewReceived}</TableCell>
@@ -413,3 +451,4 @@ export default function PurchaseOrdersPage() {
     </div>
   );
 }
+
