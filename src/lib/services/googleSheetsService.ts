@@ -338,9 +338,36 @@ const PO_DETAILS_HEADERS = [
  * Convert a PO Detail row to an array of values matching the headers
  */
 const convertPoDetailToRow = (detail: PoDetailRow): any[] => {
+    // Convert date format from "dd MMM yyyy" to "dd/MM/yyyy" if needed
+    let formattedOrderDate = detail.orderDate || '';
+    if (formattedOrderDate && formattedOrderDate.includes(' ')) {
+        // Try to parse and reformat the date
+        try {
+            const parsedDate = new Date(formattedOrderDate);
+            if (!isNaN(parsedDate.getTime())) {
+                formattedOrderDate = format(parsedDate, 'dd/MM/yyyy');
+            }
+        } catch {
+            // If parsing fails, keep original format
+        }
+    }
+
+    let formattedReceivedDate = detail.receivedDate || '';
+    if (formattedReceivedDate && formattedReceivedDate.includes(' ')) {
+        // Try to parse and reformat the date
+        try {
+            const parsedDate = new Date(formattedReceivedDate);
+            if (!isNaN(parsedDate.getTime())) {
+                formattedReceivedDate = format(parsedDate, 'dd/MM/yyyy');
+            }
+        } catch {
+            // If parsing fails, keep original format
+        }
+    }
+
     return [
         detail.poNumber || '',
-        detail.orderDate || '',
+        formattedOrderDate,
         detail.orderNumber || '',
         detail.supplierCode || '',
         detail.supplierName || '',
@@ -349,7 +376,7 @@ const convertPoDetailToRow = (detail: PoDetailRow): any[] => {
         detail.storageCode || '',
         detail.containerCode || '',
         detail.status || '',
-        detail.receivedDate || '',
+        formattedReceivedDate,
     ];
 };
 
