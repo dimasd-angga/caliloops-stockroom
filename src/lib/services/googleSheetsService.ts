@@ -4,10 +4,27 @@ import { format } from 'date-fns';
 
 // Initialize Google Sheets API
 const getGoogleSheetsClient = () => {
+    // Decode private key from Base64 if it's encoded
+    let privateKey = process.env.GOOGLE_PRIVATE_KEY;
+
+    // Check if the key is Base64 encoded (doesn't start with -----)
+    if (privateKey && !privateKey.includes('-----BEGIN')) {
+        try {
+            privateKey = Buffer.from(privateKey, 'base64').toString('utf-8');
+        } catch (error) {
+            console.error('Error decoding Base64 private key:', error);
+        }
+    }
+
+    // Replace escaped newlines with actual newlines
+    if (privateKey) {
+        privateKey = privateKey.replace(/\\n/g, '\n');
+    }
+
     const auth = new google.auth.GoogleAuth({
         credentials: {
             client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-            private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+            private_key: privateKey,
         },
         scopes: ['https://www.googleapis.com/auth/spreadsheets'],
     });
@@ -141,7 +158,7 @@ export const exportPurchaseOrdersToSheets = async (
             sheetId = existingSheet.properties?.sheetId || 0;
             await sheets.spreadsheets.values.clear({
                 spreadsheetId: SPREADSHEET_ID,
-                range: `${sheetName}!A:AE`,
+                range: `${sheetName}!A:AA`,
             });
         } else {
             // Create new sheet
