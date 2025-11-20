@@ -82,6 +82,17 @@ const formatDate = (date: any, formatStr: string): string => {
         return format(date, formatStr);
     }
 
+    // If it's a serialized Firestore Timestamp (from JSON)
+    if (date && typeof date === 'object' && 'seconds' in date) {
+        try {
+            // Convert seconds to milliseconds for JavaScript Date
+            const timestamp = new Date(date.seconds * 1000);
+            return format(timestamp, formatStr);
+        } catch {
+            return '';
+        }
+    }
+
     // If it's a string or number, try to create a Date
     try {
         return format(new Date(date), formatStr);
@@ -370,8 +381,8 @@ const convertPoDetailToRow = (detail: PoDetailRow): any[] => {
         formattedOrderDate,
         detail.orderNumber || '',
         detail.supplierCode || '',
-        detail.supplierName || '',
         detail.supplierDesc || '',
+        detail.supplierName || '',
         detail.resi || '',
         detail.storageCode || '',
         detail.containerCode || '',

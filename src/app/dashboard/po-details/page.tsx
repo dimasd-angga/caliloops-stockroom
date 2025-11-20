@@ -463,8 +463,8 @@ export default function PoDetailsPage() {
                                             <TableCell>{item.orderDate}</TableCell>
                                             <TableCell>{item.orderNumber}</TableCell>
                                             <TableCell>{item.supplierCode}</TableCell>
+                                            <TableCell className="whitespace-nowrap">{item.supplierDesc}</TableCell>
                                             <TableCell>{item.supplierName}</TableCell>
-                                            <TableCell>{item.supplierDesc}</TableCell>
                                             <TableCell className="font-medium">{item.resi}</TableCell>
                                             <TableCell>{item.storageCode}</TableCell>
                                             <TableCell>{item.containerCode}</TableCell>
