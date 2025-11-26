@@ -1,5 +1,5 @@
 import { google } from 'googleapis';
-import type { PurchaseOrder } from '../types';
+import type { PurchaseOrder } from '@/lib/types';
 import { format } from 'date-fns';
 
 // Initialize Google Sheets API
@@ -34,14 +34,18 @@ const getGoogleSheetsClient = () => {
 
 const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
 
+// ============================================================================
+// PURCHASE ORDER EXPORT
+// ============================================================================
+
 // Column headers for the purchase orders sheet
 // Order matches the MASTER sheet format
 const HEADERS = [
     'Order Date',
+    'PO Number',
     'Order No',
     'Supplier Code',
     'Nama China',
-    'Supplier Desc',
     'Status',
     'Jumlah Pcs',
     'Total RMB',
@@ -103,37 +107,50 @@ const formatDate = (date: any, formatStr: string): string => {
 
 /**
  * Convert a PurchaseOrder object to an array of values matching the headers
+ * FIXED: Ensure PO Number appears in correct position
  */
 const convertPOToRow = (po: PurchaseOrder): any[] => {
-    return [
-        formatDate(po.orderDate, 'dd/MM/yyyy'),                          // Order Date
-        po.orderNumber || '',                                             // Order No
-        po.supplierCode || '',                                            // Supplier Code
-        po.supplierName || '',                                            // Nama China
-        po.chatSearch || '',                                              // Supplier Desc
-        po.status || '',                                                  // Status
-        po.totalPcs || 0,                                                 // Jumlah Pcs
-        po.totalRmb || 0,                                                 // Total RMB
-        po.costPerPiece || 0,                                             // Cost Per Pcs
-        po.exchangeRate || 0,                                             // Kurs
-        po.totalPembelianIdr || 0,                                        // Total Pembelian (IDR)
-        po.marking || '',                                                 // Marking
-        po.packageCount || 0,                                             // Jumlah Koli
-        Array.isArray(po.trackingNumber) ? po.trackingNumber.join(', ') : '', // Shipping No
-        po.shippingNote || '',                                            // Note
-        po.totalPcsOldReceived || 0,                                      // Pcs Brg Lama Diterima
-        po.totalPcsNewReceived || 0,                                      // Pcs Brg Baru Diterima
-        po.totalPcsRefunded || 0,                                         // Pcs Refund
-        po.isOldItemsInPurchaseMenu ? 'Yes' : 'No',                       // Brg Lama di Pembelian?
-        po.isNewItemsPdfCreated ? 'Yes' : 'No',                           // PDF Brg Baru?
-        po.isPrintoutCreated ? 'Yes' : 'No',                              // Printout?
-        po.isStockUpdated ? 'Yes' : 'No',                                 // Update Stock?
-        po.isNewItemsUploaded ? 'Yes' : 'No',                             // Upload Brg Baru?
-        po.isNewItemsAddedToPurchase ? 'Yes' : 'No',                      // Brg Baru di Pembelian?
-        po.hasRefund ? 'Yes' : 'No',                                      // Ada Refund?
-        po.refundAmountYuan || 0,                                         // Jml Refund (Yuan)
-        po.isSupplierRefundApproved ? 'Yes' : 'No',                       // Supplier OK?
+    // Detailed logging to debug the issue
+    const rowData = [
+        formatDate(po.orderDate, 'dd/MM/yyyy'),                          // Order Date (Column A)
+        po.poNumber || '',                                                // PO Number (Column B) - CRITICAL FIX
+        po.orderNumber || '',                                             // Order No (Column C)
+        po.supplierCode || '',                                            // Supplier Code (Column D)
+        po.chatSearch || '',                                              // Nama China (Column E)
+        po.status || '',                                                  // Status (Column F)
+        po.totalPcs || 0,                                                 // Jumlah Pcs (Column G)
+        po.totalRmb || 0,                                                 // Total RMB (Column H)
+        po.costPerPiece || 0,                                             // Cost Per Pcs (Column I)
+        po.exchangeRate || 0,                                             // Kurs (Column J)
+        po.totalPembelianIdr || 0,                                        // Total Pembelian (IDR) (Column K)
+        po.marking || '',                                                 // Marking (Column L)
+        po.packageCount || 0,                                             // Jumlah Koli (Column M)
+        Array.isArray(po.trackingNumber) ? po.trackingNumber.join(', ') : '', // Shipping No (Column N)
+        po.shippingNote || '',                                            // Note (Column O)
+        po.totalPcsOldReceived || 0,                                      // Pcs Brg Lama Diterima (Column P)
+        po.totalPcsNewReceived || 0,                                      // Pcs Brg Baru Diterima (Column Q)
+        po.totalPcsRefunded || 0,                                         // Pcs Refund (Column R)
+        po.isOldItemsInPurchaseMenu ? 'Yes' : 'No',                       // Brg Lama di Pembelian? (Column S)
+        po.isNewItemsPdfCreated ? 'Yes' : 'No',                           // PDF Brg Baru? (Column T)
+        po.isPrintoutCreated ? 'Yes' : 'No',                              // Printout? (Column U)
+        po.isStockUpdated ? 'Yes' : 'No',                                 // Update Stock? (Column V)
+        po.isNewItemsUploaded ? 'Yes' : 'No',                             // Upload Brg Baru? (Column W)
+        po.isNewItemsAddedToPurchase ? 'Yes' : 'No',                      // Brg Baru di Pembelian? (Column X)
+        po.hasRefund ? 'Yes' : 'No',                                      // Ada Refund? (Column Y)
+        po.refundAmountYuan || 0,                                         // Jml Refund (Yuan) (Column Z)
+        po.isSupplierRefundApproved ? 'Yes' : 'No',                       // Supplier OK? (Column AA)
     ];
+
+    console.log('Converting PO:', {
+        id: po.id,
+        poNumber: po.poNumber,
+        orderNumber: po.orderNumber,
+        supplierCode: po.supplierCode,
+        rowData_columnB: rowData[1], // Should be poNumber
+        rowData_columnC: rowData[2], // Should be orderNumber
+    });
+
+    return rowData;
 };
 
 /**
@@ -190,8 +207,15 @@ export const exportPurchaseOrdersToSheets = async (
             sheetId = addSheetResponse.data.replies?.[0]?.addSheet?.properties?.sheetId || 0;
         }
 
-        // Prepare data rows
+        // Prepare data rows - CRITICAL: Log to verify data structure
+        console.log('Sample PO data (first item):', purchaseOrders[0]);
         const rows = [HEADERS, ...purchaseOrders.map(convertPOToRow)];
+
+        // Log first data row to verify column alignment
+        if (rows.length > 1) {
+            console.log('First data row:', rows[1]);
+            console.log('Headers:', HEADERS);
+        }
 
         // Write data to sheet
         await sheets.spreadsheets.values.update({
@@ -291,7 +315,7 @@ export const appendPurchaseOrdersToSheets = async (
 
         await sheets.spreadsheets.values.append({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${sheetName}!A:AE`,
+            range: `${sheetName}!A:AA`,
             valueInputOption: 'RAW',
             requestBody: {
                 values: rows,
@@ -316,13 +340,13 @@ export const appendPurchaseOrdersToSheets = async (
 // ============================================================================
 
 // Type for PO Detail row
-type PoDetailRow = {
+export type PoDetailRow = {
     poNumber: string;
     orderDate: string;
     orderNumber?: string;
     supplierCode: string;
     supplierName: string;
-    supplierDesc: string;
+    chatSearch: string;
     resi: string;
     storageCode?: string;
     containerCode?: string;
@@ -337,7 +361,6 @@ const PO_DETAILS_HEADERS = [
     'Order No',
     'Supplier Code',
     'Nama China',
-    'Supplier Desc',
     'No Resi',
     'No Storage',
     'Kode Kontainer',
@@ -352,7 +375,6 @@ const convertPoDetailToRow = (detail: PoDetailRow): any[] => {
     // Convert date format from "dd MMM yyyy" to "dd/MM/yyyy" if needed
     let formattedOrderDate = detail.orderDate || '';
     if (formattedOrderDate && formattedOrderDate.includes(' ')) {
-        // Try to parse and reformat the date
         try {
             const parsedDate = new Date(formattedOrderDate);
             if (!isNaN(parsedDate.getTime())) {
@@ -365,7 +387,6 @@ const convertPoDetailToRow = (detail: PoDetailRow): any[] => {
 
     let formattedReceivedDate = detail.receivedDate || '';
     if (formattedReceivedDate && formattedReceivedDate.includes(' ')) {
-        // Try to parse and reformat the date
         try {
             const parsedDate = new Date(formattedReceivedDate);
             if (!isNaN(parsedDate.getTime())) {
@@ -381,8 +402,7 @@ const convertPoDetailToRow = (detail: PoDetailRow): any[] => {
         formattedOrderDate,
         detail.orderNumber || '',
         detail.supplierCode || '',
-        detail.supplierDesc || '',
-        detail.supplierName || '',
+        detail.chatSearch || '',
         detail.resi || '',
         detail.storageCode || '',
         detail.containerCode || '',
@@ -424,7 +444,7 @@ export const exportPoDetailsToSheets = async (
             sheetId = existingSheet.properties?.sheetId || 0;
             await sheets.spreadsheets.values.clear({
                 spreadsheetId: SPREADSHEET_ID,
-                range: `${sheetName}!A:K`,
+                range: `${sheetName}!A:J`,
             });
         } else {
             // Create new sheet

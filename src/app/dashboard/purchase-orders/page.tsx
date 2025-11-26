@@ -226,14 +226,84 @@ export default function PurchaseOrdersPage() {
         setExportLoading(true);
 
         try {
+            // CRITICAL FIX: Properly serialize Firestore data before sending
+            // Convert Firestore Timestamps to plain objects that can be JSON serialized
+            const serializedPOs = filteredPOs.map(po => {
+                // Helper function to serialize Timestamp
+                const serializeTimestamp = (timestamp: any) => {
+                    if (timestamp && typeof timestamp === 'object' && 'seconds' in timestamp) {
+                        return timestamp;
+                    }
+                    if (timestamp && typeof timestamp === 'object' && typeof timestamp.toDate === 'function') {
+                        const date = timestamp.toDate();
+                        return { seconds: Math.floor(date.getTime() / 1000), nanoseconds: 0 };
+                    }
+                    if (timestamp instanceof Date) {
+                        return { seconds: Math.floor(timestamp.getTime() / 1000), nanoseconds: 0 };
+                    }
+                    return timestamp;
+                };
+
+                return {
+                    ...po,
+                    // Ensure all fields are properly included
+                    id: po.id,
+                    poNumber: po.poNumber,
+                    orderNumber: po.orderNumber,
+                    orderDate: serializeTimestamp(po.orderDate),
+                    storeId: po.storeId,
+                    supplierId: po.supplierId,
+                    supplierName: po.supplierName,
+                    supplierCode: po.supplierCode,
+                    chatSearch: po.chatSearch,
+                    totalPcs: po.totalPcs,
+                    totalRmb: po.totalRmb,
+                    exchangeRate: po.exchangeRate,
+                    totalPembelianIdr: po.totalPembelianIdr,
+                    marking: po.marking,
+                    shippingCost: po.shippingCost,
+                    costPerPiece: po.costPerPiece,
+                    packageCount: po.packageCount,
+                    photoUrl: po.photoUrl,
+                    trackingNumber: po.trackingNumber,
+                    shippingNote: po.shippingNote,
+                    totalPcsOldReceived: po.totalPcsOldReceived,
+                    totalPcsNewReceived: po.totalPcsNewReceived,
+                    totalPcsRefunded: po.totalPcsRefunded,
+                    status: po.status,
+                    isStockUpdated: po.isStockUpdated,
+                    isOldItemsInPurchaseMenu: po.isOldItemsInPurchaseMenu,
+                    isNewItemsPdfCreated: po.isNewItemsPdfCreated,
+                    isPrintoutCreated: po.isPrintoutCreated,
+                    isNewItemsUploaded: po.isNewItemsUploaded,
+                    isNewItemsAddedToPurchase: po.isNewItemsAddedToPurchase,
+                    hasRefund: po.hasRefund,
+                    refundAmountYuan: po.refundAmountYuan,
+                    isSupplierRefundApproved: po.isSupplierRefundApproved,
+                    createdAt: serializeTimestamp(po.createdAt),
+                    updatedAt: serializeTimestamp(po.updatedAt),
+                };
+            });
+
+            // Debug: Log what we're sending
+            console.log('=== FRONTEND EXPORT DEBUG ===');
+            console.log('Total POs:', serializedPOs.length);
+            console.log('First PO to export:', {
+                id: serializedPOs[0]?.id,
+                poNumber: serializedPOs[0]?.poNumber,
+                orderNumber: serializedPOs[0]?.orderNumber,
+                supplierCode: serializedPOs[0]?.supplierCode,
+            });
+            console.log('=== END FRONTEND DEBUG ===');
+
             const response = await fetch('/api/export-purchase-orders', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    purchaseOrders: filteredPOs,
-                    storeName: currentStoreName, // Use store name as sheet name
+                    purchaseOrders: serializedPOs,
+                    storeName: currentStoreName,
                 }),
             });
 

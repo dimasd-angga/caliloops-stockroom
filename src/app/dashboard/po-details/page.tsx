@@ -52,7 +52,7 @@ type PoDetailRow = {
     orderNumber?: string;
     supplierCode: string;
     supplierName: string;
-    supplierDesc: string;
+    chatSearch: string;
     storageCode?: string;
     containerCode?: string;
     status: 'INPUTTED' | 'SHIPPING' | 'RECEIVED';
@@ -137,7 +137,7 @@ export default function PoDetailsPage() {
                                 orderNumber: po.orderNumber,
                                 supplierCode: po.supplierCode,
                                 supplierName: po.supplierName,
-                                supplierDesc: po.chatSearch || '',
+                                chatSearch: po.chatSearch,
                                 storageCode: shippingEntry?.kodeStorage,
                                 containerCode: shippingEntry?.kodeKontainer,
                                 status: shippingEntry ? shippingEntry.status : 'INPUTTED',
@@ -270,7 +270,7 @@ export default function PoDetailsPage() {
                 },
                 body: JSON.stringify({
                     poDetails: filteredDetails,
-                    storeName: currentStoreName, // Will become "[Store Name] - PO Details" in API
+                    storeName: currentStoreName,
                 }),
             });
 
@@ -435,7 +435,6 @@ export default function PoDetailsPage() {
                                     <TableHead>Order No</TableHead>
                                     <TableHead>Supplier Code</TableHead>
                                     <TableHead>Nama China</TableHead>
-                                    <TableHead>Supplier Desc</TableHead>
                                     <TableHead>No Resi</TableHead>
                                     <TableHead>No Storage</TableHead>
                                     <TableHead>Kode Kontainer</TableHead>
@@ -446,13 +445,13 @@ export default function PoDetailsPage() {
                             <TableBody>
                                 {loading ? (
                                     <TableRow>
-                                        <TableCell colSpan={11} className="h-24 text-center">
+                                        <TableCell colSpan={10} className="h-24 text-center">
                                             <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
                                         </TableCell>
                                     </TableRow>
                                 ) : paginatedDetails.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={11} className="h-24 text-center">
+                                        <TableCell colSpan={10} className="h-24 text-center">
                                             No details found for the selected store or filters.
                                         </TableCell>
                                     </TableRow>
@@ -463,8 +462,7 @@ export default function PoDetailsPage() {
                                             <TableCell>{item.orderDate}</TableCell>
                                             <TableCell>{item.orderNumber}</TableCell>
                                             <TableCell>{item.supplierCode}</TableCell>
-                                            <TableCell className="whitespace-nowrap">{item.supplierDesc}</TableCell>
-                                            <TableCell>{item.supplierName}</TableCell>
+                                            <TableCell className="whitespace-nowrap">{item.chatSearch}</TableCell>
                                             <TableCell className="font-medium">{item.resi}</TableCell>
                                             <TableCell>{item.storageCode}</TableCell>
                                             <TableCell>{item.containerCode}</TableCell>

@@ -21,6 +21,21 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        // Log received data structure
+        console.log('=== API ROUTE RECEIVED DATA ===');
+        console.log('Number of POs:', purchaseOrders.length);
+        console.log('Store name:', storeName);
+        if (purchaseOrders.length > 0) {
+            console.log('First PO structure:', {
+                id: purchaseOrders[0].id,
+                poNumber: purchaseOrders[0].poNumber,
+                orderNumber: purchaseOrders[0].orderNumber,
+                supplierCode: purchaseOrders[0].supplierCode,
+                keys: Object.keys(purchaseOrders[0])
+            });
+        }
+        console.log('=== END API ROUTE DATA ===');
+
         // Use store name as the sheet name (will be created or updated)
         const result = await exportPurchaseOrdersToSheets(
             purchaseOrders as PurchaseOrder[],
