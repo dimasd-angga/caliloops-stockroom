@@ -41,8 +41,8 @@ const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
 // Column headers for the purchase orders sheet
 // Order matches the MASTER sheet format
 const HEADERS = [
-    'Order Date',
     'PO Number',
+    'Order Date',
     'Order No',
     'Supplier Code',
     'Nama China',
@@ -112,33 +112,33 @@ const formatDate = (date: any, formatStr: string): string => {
 const convertPOToRow = (po: PurchaseOrder): any[] => {
     // Detailed logging to debug the issue
     const rowData = [
-        formatDate(po.orderDate, 'dd/MM/yyyy'),                          // Order Date (Column A)
-        po.poNumber || '',                                                // PO Number (Column B) - CRITICAL FIX
-        po.orderNumber || '',                                             // Order No (Column C)
-        po.supplierCode || '',                                            // Supplier Code (Column D)
-        po.chatSearch || '',                                              // Nama China (Column E)
-        po.status || '',                                                  // Status (Column F)
-        po.totalPcs || 0,                                                 // Jumlah Pcs (Column G)
-        po.totalRmb || 0,                                                 // Total RMB (Column H)
-        po.costPerPiece || 0,                                             // Cost Per Pcs (Column I)
-        po.exchangeRate || 0,                                             // Kurs (Column J)
-        po.totalPembelianIdr || 0,                                        // Total Pembelian (IDR) (Column K)
-        po.marking || '',                                                 // Marking (Column L)
-        po.packageCount || 0,                                             // Jumlah Koli (Column M)
-        Array.isArray(po.trackingNumber) ? po.trackingNumber.join(', ') : '', // Shipping No (Column N)
-        po.shippingNote || '',                                            // Note (Column O)
-        po.totalPcsOldReceived || 0,                                      // Pcs Brg Lama Diterima (Column P)
-        po.totalPcsNewReceived || 0,                                      // Pcs Brg Baru Diterima (Column Q)
-        po.totalPcsRefunded || 0,                                         // Pcs Refund (Column R)
-        po.isOldItemsInPurchaseMenu ? 'Yes' : 'No',                       // Brg Lama di Pembelian? (Column S)
-        po.isNewItemsPdfCreated ? 'Yes' : 'No',                           // PDF Brg Baru? (Column T)
-        po.isPrintoutCreated ? 'Yes' : 'No',                              // Printout? (Column U)
-        po.isStockUpdated ? 'Yes' : 'No',                                 // Update Stock? (Column V)
-        po.isNewItemsUploaded ? 'Yes' : 'No',                             // Upload Brg Baru? (Column W)
-        po.isNewItemsAddedToPurchase ? 'Yes' : 'No',                      // Brg Baru di Pembelian? (Column X)
-        po.hasRefund ? 'Yes' : 'No',                                      // Ada Refund? (Column Y)
-        po.refundAmountYuan || 0,                                         // Jml Refund (Yuan) (Column Z)
-        po.isSupplierRefundApproved ? 'Yes' : 'No',                       // Supplier OK? (Column AA)
+        po.poNumber || '',
+        formatDate(po.orderDate, 'dd/MM/yyyy'),
+        po.orderNumber || '',
+        po.supplierCode || '',
+        po.chatSearch || '',
+        po.status || '',
+        po.totalPcs || 0,
+        po.totalRmb || 0,
+        po.costPerPiece || 0,
+        po.exchangeRate || 0,
+        po.totalPembelianIdr || 0,
+        po.marking || '',
+        po.packageCount || 0,
+        Array.isArray(po.trackingNumber) ? po.trackingNumber.join(', ') : '',
+        po.shippingNote || '',
+        po.totalPcsOldReceived || 0,
+        po.totalPcsNewReceived || 0,
+        po.totalPcsRefunded || 0,
+        po.isOldItemsInPurchaseMenu ? 'Yes' : 'No',
+        po.isNewItemsPdfCreated ? 'Yes' : 'No',
+        po.isPrintoutCreated ? 'Yes' : 'No',
+        po.isStockUpdated ? 'Yes' : 'No',
+        po.isNewItemsUploaded ? 'Yes' : 'No',
+        po.isNewItemsAddedToPurchase ? 'Yes' : 'No',
+        po.hasRefund ? 'Yes' : 'No',
+        po.refundAmountYuan || 0,
+        po.isSupplierRefundApproved ? 'Yes' : 'No',
     ];
 
     console.log('Converting PO:', {
@@ -146,19 +146,13 @@ const convertPOToRow = (po: PurchaseOrder): any[] => {
         poNumber: po.poNumber,
         orderNumber: po.orderNumber,
         supplierCode: po.supplierCode,
-        rowData_columnB: rowData[1], // Should be poNumber
-        rowData_columnC: rowData[2], // Should be orderNumber
+        rowData_columnB: rowData[1],
+        rowData_columnC: rowData[2],
     });
 
     return rowData;
 };
 
-/**
- * Export purchase orders to Google Sheets
- * @param purchaseOrders Array of purchase orders to export
- * @param sheetName Name of the sheet tab (should be store name)
- * @returns Success status and message
- */
 export const exportPurchaseOrdersToSheets = async (
     purchaseOrders: PurchaseOrder[],
     sheetName: string
@@ -207,17 +201,14 @@ export const exportPurchaseOrdersToSheets = async (
             sheetId = addSheetResponse.data.replies?.[0]?.addSheet?.properties?.sheetId || 0;
         }
 
-        // Prepare data rows - CRITICAL: Log to verify data structure
         console.log('Sample PO data (first item):', purchaseOrders[0]);
         const rows = [HEADERS, ...purchaseOrders.map(convertPOToRow)];
 
-        // Log first data row to verify column alignment
         if (rows.length > 1) {
             console.log('First data row:', rows[1]);
             console.log('Headers:', HEADERS);
         }
 
-        // Write data to sheet
         await sheets.spreadsheets.values.update({
             spreadsheetId: SPREADSHEET_ID,
             range: `${sheetName}!A1`,
@@ -227,12 +218,10 @@ export const exportPurchaseOrdersToSheets = async (
             },
         });
 
-        // Format the sheet (header row bold, freeze header, auto-resize columns)
         await sheets.spreadsheets.batchUpdate({
             spreadsheetId: SPREADSHEET_ID,
             requestBody: {
                 requests: [
-                    // Make header row bold
                     {
                         repeatCell: {
                             range: {
@@ -267,7 +256,6 @@ export const exportPurchaseOrdersToSheets = async (
                             fields: 'gridProperties.frozenRowCount',
                         },
                     },
-                    // Auto-resize columns
                     {
                         autoResizeDimensions: {
                             dimensions: {
@@ -298,9 +286,6 @@ export const exportPurchaseOrdersToSheets = async (
     }
 };
 
-/**
- * Append new purchase orders to existing sheet (useful for incremental updates)
- */
 export const appendPurchaseOrdersToSheets = async (
     purchaseOrders: PurchaseOrder[],
     sheetName: string = 'Purchase Orders'
@@ -335,11 +320,6 @@ export const appendPurchaseOrdersToSheets = async (
     }
 };
 
-// ============================================================================
-// PO DETAILS EXPORT
-// ============================================================================
-
-// Type for PO Detail row
 export type PoDetailRow = {
     poNumber: string;
     orderDate: string;
@@ -354,7 +334,6 @@ export type PoDetailRow = {
     receivedDate?: string;
 };
 
-// Column headers for PO Details export
 const PO_DETAILS_HEADERS = [
     'No PO',
     'Order Date',
@@ -368,11 +347,7 @@ const PO_DETAILS_HEADERS = [
     'Received Date',
 ];
 
-/**
- * Convert a PO Detail row to an array of values matching the headers
- */
 const convertPoDetailToRow = (detail: PoDetailRow): any[] => {
-    // Convert date format from "dd MMM yyyy" to "dd/MM/yyyy" if needed
     let formattedOrderDate = detail.orderDate || '';
     if (formattedOrderDate && formattedOrderDate.includes(' ')) {
         try {
@@ -411,12 +386,6 @@ const convertPoDetailToRow = (detail: PoDetailRow): any[] => {
     ];
 };
 
-/**
- * Export PO details to Google Sheets
- * @param poDetails Array of PO detail rows to export
- * @param sheetName Name of the sheet tab (should be store name + " - PO Details")
- * @returns Success status and message
- */
 export const exportPoDetailsToSheets = async (
     poDetails: PoDetailRow[],
     sheetName: string
@@ -440,14 +409,12 @@ export const exportPoDetailsToSheets = async (
         let sheetId: number;
 
         if (existingSheet) {
-            // Clear existing data if sheet exists
             sheetId = existingSheet.properties?.sheetId || 0;
             await sheets.spreadsheets.values.clear({
                 spreadsheetId: SPREADSHEET_ID,
                 range: `${sheetName}!A:J`,
             });
         } else {
-            // Create new sheet
             const addSheetResponse = await sheets.spreadsheets.batchUpdate({
                 spreadsheetId: SPREADSHEET_ID,
                 requestBody: {
@@ -465,10 +432,8 @@ export const exportPoDetailsToSheets = async (
             sheetId = addSheetResponse.data.replies?.[0]?.addSheet?.properties?.sheetId || 0;
         }
 
-        // Prepare data rows
         const rows = [PO_DETAILS_HEADERS, ...poDetails.map(convertPoDetailToRow)];
 
-        // Write data to sheet
         await sheets.spreadsheets.values.update({
             spreadsheetId: SPREADSHEET_ID,
             range: `${sheetName}!A1`,
@@ -478,12 +443,10 @@ export const exportPoDetailsToSheets = async (
             },
         });
 
-        // Format the sheet (header row bold, freeze header, auto-resize columns)
         await sheets.spreadsheets.batchUpdate({
             spreadsheetId: SPREADSHEET_ID,
             requestBody: {
                 requests: [
-                    // Make header row bold
                     {
                         repeatCell: {
                             range: {
@@ -506,7 +469,6 @@ export const exportPoDetailsToSheets = async (
                             fields: 'userEnteredFormat(textFormat,backgroundColor)',
                         },
                     },
-                    // Freeze header row
                     {
                         updateSheetProperties: {
                             properties: {
@@ -518,7 +480,6 @@ export const exportPoDetailsToSheets = async (
                             fields: 'gridProperties.frozenRowCount',
                         },
                     },
-                    // Auto-resize columns
                     {
                         autoResizeDimensions: {
                             dimensions: {
