@@ -134,8 +134,9 @@ export default function InboundPage() {
   const handleBackToList = () => {
     setSelectedSku(null);
     // Trigger a re-fetch of the first page to ensure data is fresh
-    setSearchTerm(st => st ? '' : ' '); // Toggling to trigger effect
-    setSearchTerm('');
+    // A tiny change in search term and then resetting it forces the effect to re-run.
+    setSearchTerm(st => st === '' ? ' ' : '');
+    setTimeout(() => setSearchTerm(''), 50);
   };
 
   if (selectedSku) {

@@ -80,6 +80,7 @@ export const subscribeToUsersWithRoles = (
         });
         callback(users);
       } catch (error: any) {
+        console.error("Error fetching related user data:", error);
         onError(error);
       }
     },

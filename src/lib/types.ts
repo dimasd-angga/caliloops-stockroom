@@ -35,11 +35,18 @@ export type Permissions = {
   // User & Role Management
   canManageUsers: boolean;
   canManageRoles: boolean;
-  
+
   // Activity & Reporting
   canViewActivityLogs: boolean;
   canExportLogs: boolean;
   canClearLogs: boolean;
+
+  // Master Data
+  canManageSuppliers: boolean;
+  canManagePurchaseOrders: boolean;
+  canManageCouriers: boolean;
+  canManageRefunds: boolean;
+  canManageShipping: boolean; // New permission
 
   // General
   hasFullAccess: boolean;
@@ -57,6 +64,17 @@ export type Store = {
   location: string;
   createdAt: Timestamp;
   skuCount?: number;
+};
+
+export type Courier = {
+  id: string;
+  name: string;
+  courierCode: string;
+  warehouseAddress: string;
+  marking: string;
+  contactPerson: string;
+  storeId: string;
+  createdAt: Timestamp;
 };
 
 export type User = {
@@ -94,7 +112,129 @@ export type Sku = {
   createdAt?: Timestamp;
   lastAuditDate?: Timestamp;
   imageUrl?: string;
+  keywords?: string[];
 }
+
+export type Supplier = {
+  id: string;
+  name: string;
+  supplierCode: string;
+  description?: string;
+  chatSearchName?: string;
+  storeId: string;
+  createdAt: Timestamp;
+}
+
+export type PurchaseOrder = {
+  id: string;
+  poNumber: string; 
+  orderNumber?: string; 
+  orderDate: Timestamp; 
+  
+  storeId: string;
+  supplierId: string;
+  supplierName: string; 
+  supplierCode: string; 
+  
+  chatSearch: string; 
+  
+  totalPcs: number;
+  totalRmb: number;
+  exchangeRate: number;
+  totalPembelianIdr?: number; // New optional field
+  
+  marking: string; 
+  
+  shippingCost?: number; 
+  costPerPiece?: number;
+  
+  packageCount?: number;
+  photoUrl?: string;
+  trackingNumber: string[];
+  shippingNote?: string;
+
+  // New quantity tracking fields
+  totalPcsOldReceived?: number;
+  totalPcsNewReceived?: number;
+  totalPcsRefunded?: number;
+
+  // Statuses
+  status: 'INPUTTED' | 'IN SHIPPING (PARTIAL)' | 'IN SHIPPING' | 'RECEIVED (PARTIAL)' | 'RECEIVED' | 'DONE';
+  isStockUpdated: boolean;
+  
+  // New confirmation fields
+  isOldItemsInPurchaseMenu?: boolean;
+  isNewItemsPdfCreated?: boolean; // New field
+  isPrintoutCreated?: boolean; // New field
+  isNewItemsUploaded?: boolean;
+  isNewItemsAddedToPurchase?: boolean;
+
+  // Refund - Now read-only from other systems
+  hasRefund: boolean;
+  refundAmountYuan?: number;
+  isSupplierRefundApproved: boolean;
+
+  // Timestamps
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+
+  // For frontend joins
+  supplier?: Supplier;
+  refund?: Refund;
+};
+
+export type Refund = {
+    id: string;
+    storeId: string;
+    
+    poId: string;
+    poNumber: string;
+    orderDate: Timestamp;
+    orderNumber?: string;
+    supplierId: string;
+    supplierName: string;
+    supplierCode: string;
+    chatSearch: string;
+    
+    refundAmount: number;
+    notes?: string;
+    
+    isSupplierApproved: boolean;
+    isDeducted: boolean;
+    deductedDate?: Timestamp;
+
+    createdAt: Timestamp;
+    updatedAt: Timestamp;
+}
+
+export type Shipping = {
+    id: string;
+    storeId: string;
+    
+    marking: string;
+    kodeStorage?: string;
+    kodeKontainer?: string;
+    jumlahKoli: number;
+    noResi: string[];
+    tanggalStokDiterima: Timestamp | null;
+    harga: number;
+
+    // Auto-calculated fields
+    linkedPoNumbers: string[];
+    calculatedTotalPcs: number;
+    calculatedTotalRmb: number;
+    combinedPhotoLink?: string;
+    costPerPiece: number;
+
+    // New fields for status and payment
+    status: 'SHIPPING' | 'RECEIVED';
+    isPaid: boolean;
+    paidDate: Timestamp | null;
+
+    createdAt: Timestamp;
+    createdBy: string;
+}
+
 
 export type InboundShipment = {
   id:string;
@@ -102,7 +242,9 @@ export type InboundShipment = {
   skuName: string;
   skuCode: string;
   storeId: string;
-  supplier: string;
+  supplierId: string;
+  supplierName: string;
+  purchaseOrderId: string;
   poNumber: string;
   packs: Pack[];
   totalQuantity: number;
@@ -127,7 +269,7 @@ export type Barcode = {
     isPrinted: boolean;
     createdAt: Timestamp;
     updatedAt: Timestamp;
-    supplier?: string;
+    supplier?: string; // This is now supplierName
     poNumber?: string;
 };
 

@@ -31,6 +31,12 @@ export const subscribeToAllLogs = (
   let warehouseLogs: UnifiedLog[] = [];
   let opnameLogs: UnifiedLog[] = [];
 
+  const createErrorHandler = (source: string) => (error: Error) => {
+    console.error(`Error fetching data from ${source}:`, error);
+    onError(error);
+  };
+
+
   const combineAndSortLogs = () => {
     // Combine logs from all sources
     const combined = [...inboundLogs, ...warehouseLogs, ...opnameLogs];
@@ -54,13 +60,13 @@ export const subscribeToAllLogs = (
         type: 'Inbound',
         sku: data.skuCode,
         storeId: data.storeId,
-        details: `Shipment received for ${data.totalQuantity} ${data.packs.length > 1 ? 'items' : 'item'} from ${data.supplier} (PO: ${data.poNumber})`,
+        details: `Shipment received for ${data.totalQuantity} ${data.packs.length > 1 ? 'items' : 'item'} from ${data.supplierName} (PO: ${data.poNumber})`,
         user: data.createdBy,
         status: 'Received',
       };
     });
     combineAndSortLogs();
-  }, onError);
+  }, createErrorHandler('inbound shipments'));
 
   const warehouseConstraints: QueryConstraint[] = [orderBy('datetime', 'desc')];
   if (storeId) {
@@ -82,7 +88,7 @@ export const subscribeToAllLogs = (
       };
     });
     combineAndSortLogs();
-  }, onError);
+  }, createErrorHandler('warehouse logs'));
   
   const opnameConstraints: QueryConstraint[] = [orderBy('datetime', 'desc')];
   if (storeId) {
@@ -104,7 +110,7 @@ export const subscribeToAllLogs = (
       };
     });
     combineAndSortLogs(); // Combine and sort every time any source updates
-  }, onError);
+  }, createErrorHandler('stock opname logs'));
 
   // Return a function that unsubscribes from all listeners
   return () => {
