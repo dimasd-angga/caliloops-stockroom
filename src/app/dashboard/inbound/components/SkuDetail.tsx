@@ -143,27 +143,62 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
 
     // Fetch suppliers for the current store
     React.useEffect(() => {
+        console.log('[SkuDetail] Supplier fetch effect triggered', {
+            isCreateShipmentModalOpen,
+            storeId,
+            userEmail: user?.email,
+            selectedStoreId
+        });
+
         if (isCreateShipmentModalOpen && storeId) {
+            console.log('[SkuDetail] Starting supplier subscription for storeId:', storeId);
             const unsubscribe = subscribeToSuppliers(
                 storeId,
-                setSuppliers,
-                (err) => toast({ title: 'Error fetching suppliers', variant: 'destructive' })
+                (fetchedSuppliers) => {
+                    console.log('[SkuDetail] Suppliers received:', fetchedSuppliers.length, fetchedSuppliers);
+                    setSuppliers(fetchedSuppliers);
+                },
+                (err) => {
+                    console.error('[SkuDetail] Error fetching suppliers:', err);
+                    toast({ title: 'Error fetching suppliers', variant: 'destructive' });
+                }
             );
-            return () => unsubscribe();
+            return () => {
+                console.log('[SkuDetail] Cleaning up supplier subscription');
+                unsubscribe();
+            };
+        } else {
+            console.log('[SkuDetail] Supplier fetch conditions not met');
         }
-    }, [isCreateShipmentModalOpen, storeId, toast]);
+    }, [isCreateShipmentModalOpen, storeId, toast, user?.email, selectedStoreId]);
 
     // Fetch POs when a supplier is selected
     React.useEffect(() => {
+        console.log('[SkuDetail] PO fetch effect triggered', {
+            selectedSupplierId,
+            storeId
+        });
+
         if (selectedSupplierId && storeId) {
+            console.log('[SkuDetail] Starting PO subscription for supplier:', selectedSupplierId);
             const unsubscribe = subscribeToPurchaseOrdersBySupplier(
                 storeId,
                 selectedSupplierId,
-                setPurchaseOrders,
-                (err) => toast({ title: 'Error fetching purchase orders', variant: 'destructive' })
+                (fetchedPOs) => {
+                    console.log('[SkuDetail] POs received:', fetchedPOs.length, fetchedPOs);
+                    setPurchaseOrders(fetchedPOs);
+                },
+                (err) => {
+                    console.error('[SkuDetail] Error fetching POs:', err);
+                    toast({ title: 'Error fetching purchase orders', variant: 'destructive' });
+                }
             );
-            return () => unsubscribe();
+            return () => {
+                console.log('[SkuDetail] Cleaning up PO subscription');
+                unsubscribe();
+            };
         } else {
+            console.log('[SkuDetail] Resetting POs - conditions not met');
             setPurchaseOrders([]);
         }
     }, [selectedSupplierId, storeId, toast]);
@@ -299,7 +334,7 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
             toast({ title: 'At least one pack must have a quantity greater than 0.', variant: 'destructive' });
             return;
         }
-        
+
         const supplier = suppliers.find(s => s.id === selectedSupplierId);
         const po = purchaseOrders.find(p => p.id === selectedPurchaseOrderId);
 
@@ -312,16 +347,16 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
         setIsSavingShipment(true);
         try {
             await addInboundShipment(
-                { 
-                    storeId: selectedSku.storeId, 
-                    skuId: selectedSku.id, 
-                    skuName: selectedSku.skuName, 
-                    skuCode: selectedSku.skuCode, 
+                {
+                    storeId: selectedSku.storeId,
+                    skuId: selectedSku.id,
+                    skuName: selectedSku.skuName,
+                    skuCode: selectedSku.skuCode,
                     supplierId: supplier.id,
                     supplierName: supplier.name,
                     purchaseOrderId: po.id,
                     poNumber: po.poNumber,
-                    createdBy: user?.name || 'System' 
+                    createdBy: user?.name || 'System'
                 },
                 validQuantities
             );
@@ -872,4 +907,3 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
     );
 }
 
-    
