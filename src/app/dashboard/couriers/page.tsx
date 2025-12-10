@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useContext } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -38,6 +38,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent } from '@/components/ui/card';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { UserContext } from '@/app/dashboard/layout';
 
 interface ImportPreviewItem {
     row: number;
@@ -63,8 +65,16 @@ export default function CouriersPage() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const { toast } = useToast();
 
-    // Replace with actual storeId from your auth/context
-    const storeId = 'NVOGTNzCxsPBm7BXUP8P';
+    // Get storeId from context
+    const { user, selectedStoreId } = useContext(UserContext);
+    const storeId = user?.email === 'superadmin@caliloops.com' ? selectedStoreId : user?.storeId;
+
+    console.log('[CouriersPage] Component rendered', {
+        userEmail: user?.email,
+        userStoreId: user?.storeId,
+        selectedStoreId,
+        computedStoreId: storeId
+    });
 
     const [formData, setFormData] = useState({
         courierCode: '',
@@ -75,13 +85,25 @@ export default function CouriersPage() {
     });
 
     useEffect(() => {
+        console.log('[CouriersPage] Effect triggered', { storeId });
+
+        if (!storeId) {
+            console.warn('[CouriersPage] No storeId available, skipping subscription');
+            setLoading(false);
+            return;
+        }
+
+        console.log('[CouriersPage] Starting subscription for storeId:', storeId);
+
         const unsubscribe = subscribeToCouriers(
             storeId,
             (data) => {
+                console.log('[CouriersPage] Couriers received:', data.length, data);
                 setCouriers(data);
                 setLoading(false);
             },
             (error) => {
+                console.error('[CouriersPage] Error loading couriers:', error);
                 toast({
                     title: 'Error',
                     description: 'Failed to load couriers',
@@ -91,8 +113,11 @@ export default function CouriersPage() {
             }
         );
 
-        return () => unsubscribe();
-    }, [storeId]);
+        return () => {
+            console.log('[CouriersPage] Cleaning up subscription');
+            unsubscribe();
+        };
+    }, [storeId, toast]);
 
     const handleExport = () => {
         if (couriers.length === 0) {
@@ -185,6 +210,15 @@ export default function CouriersPage() {
     };
 
     const handleConfirmImport = async () => {
+        if (!storeId) {
+            toast({
+                title: 'No Store Selected',
+                description: 'Please select a store before importing',
+                variant: 'destructive',
+            });
+            return;
+        }
+
         try {
             setImporting(true);
 
@@ -288,6 +322,15 @@ export default function CouriersPage() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
+        if (!storeId) {
+            toast({
+                title: 'No Store Selected',
+                description: 'Please select a store before adding a courier',
+                variant: 'destructive',
+            });
+            return;
+        }
+
         try {
             if (editingCourier) {
                 await updateCourier(editingCourier.id, formData);
@@ -309,6 +352,7 @@ export default function CouriersPage() {
             setIsDialogOpen(false);
             resetForm();
         } catch (error) {
+            console.error('Error saving courier:', error);
             toast({
                 title: 'Error',
                 description: 'Failed to save courier',
@@ -339,6 +383,7 @@ export default function CouriersPage() {
                 description: 'Courier deleted successfully',
             });
         } catch (error) {
+            console.error('Error deleting courier:', error);
             toast({
                 title: 'Error',
                 description: 'Failed to delete courier',
@@ -362,9 +407,32 @@ export default function CouriersPage() {
     };
 
     const openAddDialog = () => {
+        if (!storeId) {
+            toast({
+                title: 'No Store Selected',
+                description: 'Please select a store from the header before adding couriers',
+                variant: 'destructive',
+            });
+            return;
+        }
         resetForm();
         setIsDialogOpen(true);
     };
+
+    // Show message when no store is selected (for superadmin)
+    if (!storeId && user?.email === 'superadmin@caliloops.com') {
+        return (
+            <div className="p-6">
+                <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>No Store Selected</AlertTitle>
+                    <AlertDescription>
+                        Please select a store from the header dropdown to view and manage couriers.
+                    </AlertDescription>
+                </Alert>
+            </div>
+        );
+    }
 
     return (
         <div className="p-6">
@@ -381,6 +449,7 @@ export default function CouriersPage() {
                     <Button
                         variant="outline"
                         onClick={() => setIsImportDialogOpen(true)}
+                        disabled={!storeId}
                     >
                         <Upload className="mr-2 h-4 w-4" />
                         Import from Excel
@@ -393,7 +462,7 @@ export default function CouriersPage() {
                         <Download className="mr-2 h-4 w-4" />
                         Export to Excel
                     </Button>
-                    <Button onClick={openAddDialog}>
+                    <Button onClick={openAddDialog} disabled={!storeId}>
                         <PlusCircle className="mr-2 h-4 w-4" />
                         Add Courier
                     </Button>
@@ -401,7 +470,17 @@ export default function CouriersPage() {
             </div>
 
             {loading ? (
-                <div>Loading...</div>
+                <div className="flex items-center justify-center h-64">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
+            ) : couriers.length === 0 ? (
+                <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>No Couriers Found</AlertTitle>
+                    <AlertDescription>
+                        No couriers found for this store. Click &quot;Add Courier&quot; to create one.
+                    </AlertDescription>
+                </Alert>
             ) : (
                 <div className="border rounded-lg">
                     <Table>
@@ -564,7 +643,7 @@ export default function CouriersPage() {
                     <DialogHeader>
                         <DialogTitle>Import Preview - Confirm Before Importing</DialogTitle>
                         <DialogDescription>
-                            Review the data before importing. Only items marked as "Will Create" will be imported.
+                            Review the data before importing. Only items marked as &quot;Will Create&quot; will be imported.
                         </DialogDescription>
                     </DialogHeader>
 
