@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useContext } from 'react';
 import {
     Card,
     CardHeader,
@@ -65,6 +65,7 @@ import {
 } from '@/lib/services/excelService';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { UserContext } from '@/app/dashboard/layout';
 
 const ROWS_PER_PAGE = 10;
 
@@ -92,8 +93,16 @@ export default function SuppliersPage() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const { toast } = useToast();
 
-    // Replace with actual storeId from your auth/context
-    const storeId = 'NVOGTNzCxsPBm7BXUP8P';
+    // Get storeId from context
+    const { user, selectedStoreId } = useContext(UserContext);
+    const storeId = user?.email === 'superadmin@caliloops.com' ? selectedStoreId : user?.storeId;
+
+    console.log('[SuppliersPage] Component rendered', {
+        userEmail: user?.email,
+        userStoreId: user?.storeId,
+        selectedStoreId,
+        computedStoreId: storeId
+    });
 
     const [formData, setFormData] = useState({
         supplierCode: '',
@@ -103,13 +112,25 @@ export default function SuppliersPage() {
     });
 
     useEffect(() => {
+        console.log('[SuppliersPage] Effect triggered', { storeId });
+
+        if (!storeId) {
+            console.warn('[SuppliersPage] No storeId available, skipping subscription');
+            setLoading(false);
+            return;
+        }
+
+        console.log('[SuppliersPage] Starting subscription for storeId:', storeId);
+
         const unsubscribe = subscribeToSuppliers(
             storeId,
             (data) => {
+                console.log('[SuppliersPage] Suppliers received:', data.length, data);
                 setSuppliers(data);
                 setLoading(false);
             },
             (error) => {
+                console.error('[SuppliersPage] Error loading suppliers:', error);
                 toast({
                     title: 'Error',
                     description: 'Failed to load suppliers',
@@ -119,8 +140,11 @@ export default function SuppliersPage() {
             }
         );
 
-        return () => unsubscribe();
-    }, [storeId]);
+        return () => {
+            console.log('[SuppliersPage] Cleaning up subscription');
+            unsubscribe();
+        };
+    }, [storeId, toast]);
 
     const handleExport = () => {
         if (suppliers.length === 0) {
@@ -213,6 +237,15 @@ export default function SuppliersPage() {
     };
 
     const handleConfirmImport = async () => {
+        if (!storeId) {
+            toast({
+                title: 'No Store Selected',
+                description: 'Please select a store before importing',
+                variant: 'destructive',
+            });
+            return;
+        }
+
         try {
             setImporting(true);
 
@@ -315,6 +348,15 @@ export default function SuppliersPage() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
+        if (!storeId) {
+            toast({
+                title: 'No Store Selected',
+                description: 'Please select a store before adding a supplier',
+                variant: 'destructive',
+            });
+            return;
+        }
+
         try {
             if (editingSupplier) {
                 await updateSupplier(editingSupplier.id, formData);
@@ -336,6 +378,7 @@ export default function SuppliersPage() {
             setIsDialogOpen(false);
             resetForm();
         } catch (error) {
+            console.error('Error saving supplier:', error);
             toast({
                 title: 'Error',
                 description: 'Failed to save supplier',
@@ -365,6 +408,7 @@ export default function SuppliersPage() {
                 description: 'Supplier deleted successfully',
             });
         } catch (error) {
+            console.error('Error deleting supplier:', error);
             toast({
                 title: 'Error',
                 description: 'Failed to delete supplier',
@@ -387,9 +431,32 @@ export default function SuppliersPage() {
     };
 
     const openAddDialog = () => {
+        if (!storeId) {
+            toast({
+                title: 'No Store Selected',
+                description: 'Please select a store from the header before adding suppliers',
+                variant: 'destructive',
+            });
+            return;
+        }
         resetForm();
         setIsDialogOpen(true);
     };
+
+    // Show message when no store is selected (for superadmin)
+    if (!storeId && user?.email === 'superadmin@caliloops.com') {
+        return (
+            <div className="p-6">
+                <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>No Store Selected</AlertTitle>
+                    <AlertDescription>
+                        Please select a store from the header dropdown to view and manage suppliers.
+                    </AlertDescription>
+                </Alert>
+            </div>
+        );
+    }
 
     return (
         <div className="p-6">
@@ -406,6 +473,7 @@ export default function SuppliersPage() {
                     <Button
                         variant="outline"
                         onClick={() => setIsImportDialogOpen(true)}
+                        disabled={!storeId}
                     >
                         <Upload className="mr-2 h-4 w-4" />
                         Import from Excel
@@ -418,7 +486,7 @@ export default function SuppliersPage() {
                         <Download className="mr-2 h-4 w-4" />
                         Export to Excel
                     </Button>
-                    <Button onClick={openAddDialog}>
+                    <Button onClick={openAddDialog} disabled={!storeId}>
                         <PlusCircle className="mr-2 h-4 w-4" />
                         Add Supplier
                     </Button>
@@ -426,7 +494,17 @@ export default function SuppliersPage() {
             </div>
 
             {loading ? (
-                <div>Loading...</div>
+                <div className="flex items-center justify-center h-64">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
+            ) : suppliers.length === 0 ? (
+                <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>No Suppliers Found</AlertTitle>
+                    <AlertDescription>
+                        No suppliers found for this store. Click &quot;Add Supplier&quot; to create one.
+                    </AlertDescription>
+                </Alert>
             ) : (
                 <div className="border rounded-lg">
                     <Table>
@@ -577,7 +655,7 @@ export default function SuppliersPage() {
                     <DialogHeader>
                         <DialogTitle>Import Preview - Confirm Before Importing</DialogTitle>
                         <DialogDescription>
-                            Review the data before importing. Only items marked as "Will Create" will be imported.
+                            Review the data before importing. Only items marked as &quot;Will Create&quot; will be imported.
                         </DialogDescription>
                     </DialogHeader>
 
