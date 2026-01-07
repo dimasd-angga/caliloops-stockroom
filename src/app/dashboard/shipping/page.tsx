@@ -93,7 +93,7 @@ import { NumericInput } from '@/components/ui/numeric-input';
 
 const TrackingNumberInput = ({ value, onChange, disabled }: { value: string[], onChange: (value: string[]) => void, disabled?: boolean }) => {
     const [inputValue, setInputValue] = React.useState('');
-  
+
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === ' ' || e.key === 'Enter') {
         e.preventDefault();
@@ -104,11 +104,11 @@ const TrackingNumberInput = ({ value, onChange, disabled }: { value: string[], o
         setInputValue('');
       }
     };
-  
+
     const removeTag = (tagToRemove: string) => {
       onChange((value || []).filter(tag => tag !== tagToRemove));
     };
-  
+
     return (
       <div className="flex flex-wrap items-center gap-2 rounded-md border border-input p-2">
         {(value || []).map(tag => (
@@ -279,12 +279,10 @@ export default function ShippingPage() {
         }
     };
 
-    const newCostPerPiece = React.useMemo(() => {
-        if (!currentShipping || !currentShipping.harga || currentShipping.harga <= 0 || !aggregatedData || aggregatedData.totalPcs <= 0) {
-            return 0;
-        }
-        return currentShipping.harga / aggregatedData.totalPcs;
-    }, [currentShipping?.harga, aggregatedData?.totalPcs]);
+    const newCostPerPiece =
+        totalShippingCost > 0 && totalPcs > 0
+            ? totalShippingCost / totalPcs
+            : 0;
 
     const handleSubmit = async () => {
         if (!storeId || !currentShipping || !currentShipping.marking || currentShipping.jumlahKoli === undefined || currentShipping.jumlahKoli === null || linkedPOs.length === 0) {
@@ -760,4 +758,3 @@ export default function ShippingPage() {
     );
 }
 
-    

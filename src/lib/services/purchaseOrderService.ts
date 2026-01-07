@@ -32,7 +32,7 @@ export const subscribeToPurchaseOrders = (
   onError: (error: Error) => void
 ) => {
   const q = query(
-    purchaseOrdersCollection, 
+    purchaseOrdersCollection,
     where('storeId', '==', storeId),
     orderBy('createdAt', 'desc')
   );
@@ -49,9 +49,9 @@ export const subscribeToPurchaseOrders = (
             ]);
 
             const suppliersMap = new Map(suppliersSnapshot.docs.map(doc => [doc.id, doc.data() as Supplier]));
-            
+
             const shippingData = shippingSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Shipping));
-            
+
             const resiStatusMap = new Map<string, 'RECEIVED' | 'SHIPPING'>();
             shippingData.forEach(s => {
                 const resiList = Array.isArray(s.noResi) ? s.noResi : [s.noResi].filter(Boolean);
@@ -72,16 +72,16 @@ export const subscribeToPurchaseOrders = (
                 const poData = { id: doc.id, ...doc.data() } as PurchaseOrder;
                 const supplier = suppliersMap.get(poData.supplierId);
                 const refund = refundsMap.get(doc.id);
-                
-                let dynamicStatus: PurchaseOrder['status'] = poData.status; 
+
+                let dynamicStatus: PurchaseOrder['status'] = poData.status;
                 const poTrackingNumbers = poData.trackingNumber || [];
                 const totalResiInPo = poTrackingNumbers.length;
-                
+
                 if (poData.status !== 'DONE') {
                      if (totalResiInPo > 0) {
                         const associatedShippingStatuses = poTrackingNumbers.map(tn => resiStatusMap.get(tn)).filter(Boolean);
                         const receivedCount = associatedShippingStatuses.filter(s => s === 'RECEIVED').length;
-                        
+
                         if (receivedCount === totalResiInPo) {
                             dynamicStatus = 'RECEIVED';
                         } else if (receivedCount > 0) {
@@ -97,7 +97,7 @@ export const subscribeToPurchaseOrders = (
                         dynamicStatus = 'INPUTTED';
                     }
                 }
-                
+
                 return {
                     id: doc.id,
                     ...poData,
@@ -135,7 +135,7 @@ export const getPurchaseOrderById = async (poId: string): Promise<PurchaseOrder 
 export const getPurchaseOrderWithDetails = async (poId: string): Promise<(PurchaseOrder & { supplier?: Supplier, refund?: Refund }) | null> => {
     if (!poId) return null;
     const poDocRef = doc(firestore, 'purchaseOrders', poId);
-    
+
     // Fetch PO and its potential refund simultaneously
     const [poDocSnap, refundSnapshot] = await Promise.all([
         getDoc(poDocRef),
@@ -160,22 +160,22 @@ export const getPurchaseOrderWithDetails = async (poId: string): Promise<(Purcha
         const refundDoc = refundSnapshot.docs[0];
         poData.refund = { id: refundDoc.id, ...refundDoc.data() } as Refund;
     }
-    
+
     return poData;
 };
 
 
 export const findPOsByTrackingNumbers = async (storeId: string, trackingNumbers: string[]): Promise<PurchaseOrder[]> => {
     if (trackingNumbers.length === 0) return [];
-    
+
     const chunks: string[][] = [];
     for (let i = 0; i < trackingNumbers.length; i += 30) {
         chunks.push(trackingNumbers.slice(i, i + 30));
     }
-    
+
     const poResults: PurchaseOrder[] = [];
     const poIds = new Set<string>();
-    
+
     for (const chunk of chunks) {
         const q = query(
             purchaseOrdersCollection,
@@ -194,35 +194,26 @@ export const findPOsByTrackingNumbers = async (storeId: string, trackingNumbers:
     return poResults;
 };
 
-export const updatePOStatusAndShippingCost = async (poIds: string[], newCostPerPiece: number) => {
+export const updatePOStatusAndShippingCost = async (
+    poIds: string[],
+    newCostPerPiece: number
+) => {
     const batch = writeBatch(firestore);
 
     for (const id of poIds) {
         const poRef = doc(firestore, 'purchaseOrders', id);
-        try {
-            const poDoc = await getDoc(poRef);
-            if (poDoc.exists()) {
-                const currentData = poDoc.data() as PurchaseOrder;
-                const currentCost = currentData.costPerPiece || 0;
+        const poDoc = await getDoc(poRef);
 
-                const updateData: any = {
-                    updatedAt: Timestamp.now(),
-                };
+        if (!poDoc.exists()) continue;
 
-                // Only update if the new cost is higher
-                if (newCostPerPiece > currentCost) {
-                    updateData.costPerPiece = newCostPerPiece;
-                }
-                
-                batch.update(poRef, updateData);
-            }
-        } catch (error) {
-            console.error(`Failed to get PO doc ${id} for update:`, error);
-        }
+        batch.update(poRef, {
+            costPerPiece: newCostPerPiece,
+            updatedAt: Timestamp.now(),
+        });
     }
 
     await batch.commit();
-}
+};
 
 
 export const subscribeToPurchaseOrdersBySupplier = (
@@ -237,7 +228,7 @@ export const subscribeToPurchaseOrdersBySupplier = (
       where('supplierId', '==', supplierId),
       orderBy('createdAt', 'desc')
     );
-  
+
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
@@ -251,14 +242,14 @@ export const subscribeToPurchaseOrdersBySupplier = (
         onError(error);
       }
     );
-  
+
     return unsubscribe;
   };
 
 export const addOrUpdatePurchaseOrder = async (
   poData: Partial<PurchaseOrder> & { storeId: string }
 ): Promise<string> => {
-  
+
   const totalPembelian = poData.totalPembelianIdr !== undefined ? poData.totalPembelianIdr : (poData.totalRmb || 0) * (poData.exchangeRate || 0);
   const finalPoData = { ...poData, totalPembelianIdr: totalPembelian, costPerPiece: poData.costPerPiece || 0 };
 
@@ -278,9 +269,9 @@ export const addOrUpdatePurchaseOrder = async (
         marking: '',
         chatSearch: '',
         trackingNumber: [],
-        ...finalPoData, 
+        ...finalPoData,
         poNumber: poData.poNumber || '',
-        status: 'INPUTTED', 
+        status: 'INPUTTED',
         isStockUpdated: false,
         shippingNote: '',
         isNewItemsUploaded: false,
