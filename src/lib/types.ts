@@ -210,7 +210,7 @@ export type Refund = {
 export type Shipping = {
     id: string;
     storeId: string;
-    
+
     marking: string;
     kodeStorage?: string;
     kodeKontainer?: string;
@@ -233,6 +233,34 @@ export type Shipping = {
 
     createdAt: Timestamp;
     createdBy: string;
+}
+
+export type PurchaseOrderItem = {
+    id: string;
+    poId: string;
+    poNumber: string;
+    storeId: string;
+
+    // From Excel (Chinese columns)
+    serialNumber: number; // 序号
+    itemCode: string; // 货号
+    itemName: string; // 货品名称
+    specification: string; // 规格
+    quantity: number; // 数量/Quantity
+    unitPrice: number; // 单价 (in Yuan)
+    discount: number; // 优惠（元）
+    amount: number; // 金额（元）
+
+    // SKU Mapping & Calculations
+    skuId?: string; // Selected SKU ID
+    skuCode?: string; // SKU Code
+    skuName?: string; // SKU Name
+    hargaBarang: number; // Auto-calculated: unitPrice * exchangeRate
+    costPerPcs: number; // From PO
+    modalBarang: number; // Auto-calculated: hargaBarang + costPerPcs
+
+    createdAt: Timestamp;
+    updatedAt: Timestamp;
 }
 
 

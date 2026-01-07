@@ -122,9 +122,9 @@ export const subscribeToSkus = (
     if (storeId) {
       constraints.push(where('storeId', '==', storeId));
     }
-  
+
     const q = query(skusCollection, ...constraints);
-  
+
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
@@ -138,6 +138,16 @@ export const subscribeToSkus = (
         onError(error);
       }
     );
-  
+
     return unsubscribe;
   };
+
+export const getAllSkusByStore = async (storeId: string): Promise<Sku[]> => {
+  const q = query(
+    skusCollection,
+    where('storeId', '==', storeId),
+    orderBy('skuCode', 'asc')
+  );
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Sku));
+};
