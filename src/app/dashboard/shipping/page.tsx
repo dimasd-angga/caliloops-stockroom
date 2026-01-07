@@ -280,8 +280,8 @@ export default function ShippingPage() {
     };
 
     const newCostPerPiece =
-        totalShippingCost > 0 && totalPcs > 0
-            ? totalShippingCost / totalPcs
+        currentShipping?.harga && currentShipping.harga > 0 && aggregatedData?.totalPcs > 0
+            ? currentShipping.harga / aggregatedData.totalPcs
             : 0;
 
     const handleSubmit = async () => {
