@@ -28,6 +28,28 @@ const extractNumber = (value: any): number => {
   return 0;
 };
 
+// Helper to find value from row by trying multiple column name variations
+const getRowValue = (row: any, ...columnNames: string[]): any => {
+  for (const name of columnNames) {
+    // Try exact match
+    if (row[name] !== undefined && row[name] !== null) {
+      return row[name];
+    }
+    // Try trimmed version
+    const trimmedName = name.trim();
+    if (row[trimmedName] !== undefined && row[trimmedName] !== null) {
+      return row[trimmedName];
+    }
+    // Try to find by partial match (in case of extra spaces in column headers)
+    for (const key in row) {
+      if (key.trim() === trimmedName) {
+        return row[key];
+      }
+    }
+  }
+  return undefined;
+};
+
 export const parsePOItemsExcel = (file: File): Promise<ParseResult> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -43,17 +65,22 @@ export const parsePOItemsExcel = (file: File): Promise<ParseResult> => {
         const items: ParsedPOItem[] = [];
         const errors: { row: number; error: string; data: any }[] = [];
 
+        // Debug: log the first row to see actual column names
+        if (json.length > 0) {
+          console.log('Excel columns found:', Object.keys(json[0]));
+        }
+
         json.forEach((row, index) => {
           try {
-            // Map Chinese column names to data
-            const serialNumber = row['序号'] || row['SerialNumber'] || (index + 1);
-            const itemCode = row['货号'] || row['ItemCode'] || '';
-            const itemName = row['货品名称'] || row['ItemName'] || '';
-            const specification = row['规格'] || row['Specification'] || '';
-            const quantity = extractNumber(row['数量/Quantity'] || row['Quantity'] || 0);
-            const unitPrice = extractNumber(row['单价'] || row['UnitPrice'] || 0);
-            const discount = extractNumber(row['优惠（元）'] || row['Discount'] || 0);
-            const amount = extractNumber(row['金额（元）'] || row['Amount'] || 0);
+            // Map Chinese column names to data with flexible column matching
+            const serialNumber = getRowValue(row, '序号', 'SerialNumber') || (index + 1);
+            const itemCode = getRowValue(row, '货号', 'ItemCode') || '';
+            const itemName = getRowValue(row, '货品名称', 'ItemName') || '';
+            const specification = getRowValue(row, '规格', 'Specification') || '';
+            const quantity = extractNumber(getRowValue(row, '数量/Quantity', '数量', 'Quantity') || 0);
+            const unitPrice = extractNumber(getRowValue(row, '单价', 'UnitPrice') || 0);
+            const discount = extractNumber(getRowValue(row, '优惠（元）', '优惠', 'Discount') || 0);
+            const amount = extractNumber(getRowValue(row, '金额（元）', '金额', 'Amount') || 0);
 
             // Validate required fields
             if (!itemCode) {
@@ -76,9 +103,9 @@ export const parsePOItemsExcel = (file: File): Promise<ParseResult> => {
 
             items.push({
               serialNumber: typeof serialNumber === 'number' ? serialNumber : (index + 1),
-              itemCode,
-              itemName,
-              specification,
+              itemCode: String(itemCode).trim(),
+              itemName: String(itemName).trim(),
+              specification: String(specification).trim(),
               quantity,
               unitPrice,
               discount,

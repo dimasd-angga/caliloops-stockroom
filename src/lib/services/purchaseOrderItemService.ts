@@ -15,7 +15,7 @@ import {
   deleteDoc,
   getDocs,
 } from 'firebase/firestore';
-import type { PurchaseOrderItem } from '../types';
+import type { PurchaseOrderItem, PurchaseOrder } from '../types';
 
 const poItemsCollection = collection(firestore, 'purchaseOrderItems');
 
@@ -96,8 +96,18 @@ export const updatePOItem = async (
   data: Partial<Omit<PurchaseOrderItem, 'id' | 'createdAt'>>
 ): Promise<void> => {
   const itemRef = doc(firestore, 'purchaseOrderItems', itemId);
+
+  // Filter out undefined values (Firestore doesn't accept undefined, only null)
+  const cleanData: any = {};
+  Object.keys(data).forEach(key => {
+    const value = (data as any)[key];
+    if (value !== undefined) {
+      cleanData[key] = value;
+    }
+  });
+
   await updateDoc(itemRef, {
-    ...data,
+    ...cleanData,
     updatedAt: Timestamp.now(),
   });
 };
@@ -144,4 +154,55 @@ export const bulkUpdatePOItems = async (
   });
 
   await batch.commit();
+};
+
+/**
+ * Get shipping PO information for a specific SKU
+ * Returns PO details where status is 'IN SHIPPING' or 'IN SHIPPING (PARTIAL)'
+ */
+export const getShippingPOsForSku = async (
+  skuId: string,
+  storeId: string
+): Promise<Array<{ po: PurchaseOrder; totalQuantity: number }>> => {
+  // First, find all PO items with this SKU
+  const itemsQuery = query(
+    poItemsCollection,
+    where('skuId', '==', skuId),
+    where('storeId', '==', storeId)
+  );
+  const itemsSnapshot = await getDocs(itemsQuery);
+
+  if (itemsSnapshot.empty) {
+    return [];
+  }
+
+  // Get unique PO IDs
+  const poIds = [...new Set(itemsSnapshot.docs.map(doc => doc.data().poId))];
+
+  // Fetch PO details and filter by shipping status
+  const posCollection = collection(firestore, 'purchaseOrders');
+  const results: Array<{ po: PurchaseOrder; totalQuantity: number }> = [];
+
+  for (const poId of poIds) {
+    const poRef = doc(posCollection, poId);
+    const poDoc = await getDoc(poRef);
+
+    if (poDoc.exists()) {
+      const poData = { id: poDoc.id, ...poDoc.data() } as PurchaseOrder;
+
+      // Only include if status is IN SHIPPING
+      if (poData.status === 'IN SHIPPING' || poData.status === 'IN SHIPPING (PARTIAL)') {
+        // Calculate total quantity for this SKU in this PO
+        const itemsForThisPO = itemsSnapshot.docs
+          .filter(doc => doc.data().poId === poId)
+          .map(doc => doc.data() as PurchaseOrderItem);
+
+        const totalQuantity = itemsForThisPO.reduce((sum, item) => sum + item.quantity, 0);
+
+        results.push({ po: poData, totalQuantity });
+      }
+    }
+  }
+
+  return results;
 };

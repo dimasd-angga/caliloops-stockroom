@@ -113,6 +113,12 @@ export type Sku = {
   lastAuditDate?: Timestamp;
   imageUrl?: string;
   keywords?: string[];
+  // Shipping info (calculated, not stored in DB)
+  shippingInfo?: Array<{
+    quantity: number;
+    poNumber: string;
+    estimatedArrival: Date;
+  }>;
 }
 
 export type Supplier = {
@@ -255,6 +261,7 @@ export type PurchaseOrderItem = {
     skuId?: string; // Selected SKU ID
     skuCode?: string; // SKU Code
     skuName?: string; // SKU Name
+    imageUrl?: string; // Product photo URL
     hargaBarang: number; // Auto-calculated: unitPrice * exchangeRate
     costPerPcs: number; // From PO
     modalBarang: number; // Auto-calculated: hargaBarang + costPerPcs
@@ -263,6 +270,84 @@ export type PurchaseOrderItem = {
     updatedAt: Timestamp;
 }
 
+export type POReceive = {
+    id: string;
+    poId: string;
+    poNumber: string;
+    storeId: string;
+    supplierId: string;
+    supplierName: string;
+
+    status: 'IN_PROGRESS' | 'COMPLETED';
+
+    totalItemsCount: number;
+    totalReceivedItems: number; // How many items have receive input
+
+    createdAt: Timestamp;
+    updatedAt: Timestamp;
+    completedAt?: Timestamp;
+}
+
+export type POReceiveItem = {
+    id: string;
+    poReceiveId: string;
+    poId: string;
+    poNumber: string;
+    storeId: string;
+    poItemId: string; // Reference to purchaseOrderItems
+
+    // Original PO Item Data (copied from purchaseOrderItems)
+    serialNumber: number;
+    itemCode: string;
+    itemName: string;
+    specification: string;
+    quantity: number; // Original ordered quantity
+    unitPrice: number;
+    discount: number;
+    amount: number;
+    skuId?: string;
+    skuCode?: string;
+    skuName?: string;
+    imageUrl?: string; // Product photo
+    hargaBarang: number;
+    costPerPcs: number;
+    modalBarang: number;
+
+    // Receive Data (user input)
+    qtyReceived: number; // 收到的数量
+    qtyNotReceived: number; // 没收到的数量 (auto calculated)
+    qtyDamaged: number; // 坏掉的数量
+
+    // Calculated fields
+    totalPcsFinal: number; // qtyReceived + qtyNotReceived + qtyDamaged
+    amountNotReceived: number; // qtyNotReceived * unitPrice
+    amountDamaged: number; // qtyDamaged * unitPrice
+
+    // Status tracking
+    hasReceivedInput: boolean; // Has user clicked "Input Terima"?
+
+    createdAt: Timestamp;
+    updatedAt: Timestamp;
+}
+
+export type DraftInboundShipment = {
+    id: string;
+    poReceiveItemId: string;
+    storeId: string;
+    skuId: string;
+    skuCode: string;
+    poId: string;
+    poNumber: string;
+    supplierId: string;
+    supplierName: string;
+    packs: Array<{
+        quantity: number;
+        unit: Unit;
+        note: string;
+    }>;
+    createdAt: Timestamp;
+    updatedAt: Timestamp;
+}
 
 export type InboundShipment = {
   id:string;

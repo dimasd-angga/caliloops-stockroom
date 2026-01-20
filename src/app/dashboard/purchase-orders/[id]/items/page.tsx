@@ -34,9 +34,9 @@ import {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import type { PurchaseOrder, PurchaseOrderItem, Sku } from '@/lib/types';
-import { getPurchaseOrderWithDetails } from '@/lib/services/purchaseOrderService';
+import { getPurchaseOrderWithDetails, addOrUpdatePurchaseOrder } from '@/lib/services/purchaseOrderService';
 import {
-  subscribeToPOItems,
+  getPOItems,
   savePOItems,
   updatePOItem,
   deletePOItem,
@@ -56,6 +56,9 @@ import {
   Search,
   AlertTriangle,
   FileSpreadsheet,
+  ChevronLeft,
+  ChevronRight,
+  RefreshCw,
 } from 'lucide-react';
 import { UserContext } from '@/app/dashboard/layout';
 import { format } from 'date-fns';
@@ -83,6 +86,10 @@ export default function PurchaseOrderItemsPage() {
   // Search state
   const [searchTerm, setSearchTerm] = React.useState('');
 
+  // Status update dialog
+  const [isStatusDialogOpen, setIsStatusDialogOpen] = React.useState(false);
+  const [updatingStatus, setUpdatingStatus] = React.useState(false);
+
   const storeId = user?.email === 'superadmin@caliloops.com' ? selectedStoreId : user?.storeId;
 
   // Fetch PO details
@@ -100,23 +107,27 @@ export default function PurchaseOrderItemsPage() {
     fetchPO();
   }, [poId, toast, router]);
 
-  // Subscribe to PO items
-  React.useEffect(() => {
+  // Fetch PO items (one-time, not real-time subscription)
+  const fetchItems = React.useCallback(async () => {
     if (!poId) return;
     setLoading(true);
-    const unsubscribe = subscribeToPOItems(
-      poId,
-      (fetchedItems) => {
+    try {
+      const fetchedItems = await getPOItems(poId);
+
+      // Use startTransition for non-urgent state update to prevent freezing
+      React.startTransition(() => {
         setItems(fetchedItems);
         setLoading(false);
-      },
-      (error) => {
-        toast({ title: 'Error fetching items', variant: 'destructive' });
-        setLoading(false);
-      }
-    );
-    return () => unsubscribe();
+      });
+    } catch (error) {
+      toast({ title: 'Error fetching items', variant: 'destructive' });
+      setLoading(false);
+    }
   }, [poId, toast]);
+
+  React.useEffect(() => {
+    fetchItems();
+  }, [fetchItems]);
 
   // Calculate values
   const calculateHargaBarang = (unitPrice: number): number => {
@@ -138,21 +149,28 @@ export default function PurchaseOrderItemsPage() {
       const { items: parsedItems, errors } = await parsePOItemsExcel(file);
 
       if (errors.length > 0) {
+        console.log('Parsing errors:', errors);
         toast({
           title: 'Parsing completed with errors',
-          description: `${errors.length} row(s) had errors and were skipped.`,
+          description: `${errors.length} row(s) had errors and were skipped. Check console for details.`,
           variant: 'destructive',
         });
       }
 
       if (parsedItems.length === 0) {
-        toast({ title: 'No valid items found in file', variant: 'destructive' });
+        toast({
+          title: 'No valid items found in file',
+          description: 'Please check that your Excel file has the correct column headers and valid data.',
+          variant: 'destructive'
+        });
         return;
       }
 
+      console.log('Successfully parsed items:', parsedItems);
       setUploadedItems(parsedItems);
       setIsUploadConfirmOpen(true);
     } catch (error: any) {
+      console.error('Upload error:', error);
       toast({ title: 'Upload failed', description: error.message, variant: 'destructive' });
     } finally {
       if (fileInputRef.current) {
@@ -163,6 +181,9 @@ export default function PurchaseOrderItemsPage() {
 
   const handleConfirmUpload = async () => {
     if (!po || !storeId) return;
+
+    setIsUploadConfirmOpen(false);
+    setLoading(true);
 
     try {
       const itemsToSave = uploadedItems.map((item) => {
@@ -187,56 +208,137 @@ export default function PurchaseOrderItemsPage() {
 
       await savePOItems(poId, po.poNumber, storeId, itemsToSave, uploadAction === 'replace');
 
-      toast({
-        title: 'Upload successful',
-        description: `${uploadedItems.length} items ${uploadAction === 'replace' ? 'replaced' : 'added'}.`,
-      });
-
-      setIsUploadConfirmOpen(false);
-      setUploadedItems([]);
+      // Refresh items after upload with a slight delay to prevent UI freeze
+      setTimeout(async () => {
+        await fetchItems();
+        setUploadedItems([]);
+        toast({
+          title: 'Upload successful',
+          description: `${uploadedItems.length} items ${uploadAction === 'replace' ? 'replaced' : 'added'}.`,
+        });
+      }, 100);
     } catch (error) {
+      setLoading(false);
       toast({ title: 'Failed to save items', variant: 'destructive' });
     }
   };
 
-  // Handle field changes
-  const handleItemChange = async (
-    itemId: string,
-    field: keyof PurchaseOrderItem,
-    value: any
-  ) => {
-    try {
-      const updateData: any = { [field]: value };
+  // Local state for optimistic updates
+  const [localValues, setLocalValues] = React.useState<{ [key: string]: any }>({});
 
-      // Recalculate if unit price changes
-      if (field === 'unitPrice') {
-        const hargaBarang = calculateHargaBarang(value);
-        updateData.hargaBarang = hargaBarang;
-        updateData.modalBarang = calculateModalBarang(hargaBarang);
+  // Debounce timers for field changes
+  const debounceTimers = React.useRef<{ [key: string]: NodeJS.Timeout }>({});
+
+  // Handle field changes with debouncing and optimistic updates
+  const handleItemChange = React.useCallback(
+    (itemId: string, field: keyof PurchaseOrderItem, value: any) => {
+      const key = `${itemId}-${field}`;
+
+      // Update local state immediately for responsive UI
+      setLocalValues((prev) => ({ ...prev, [key]: value }));
+
+      // Clear existing timer
+      if (debounceTimers.current[key]) {
+        clearTimeout(debounceTimers.current[key]);
       }
 
-      await updatePOItem(itemId, updateData);
-    } catch (error) {
-      toast({ title: 'Failed to update item', variant: 'destructive' });
-    }
+      // Set new timer for database update
+      debounceTimers.current[key] = setTimeout(async () => {
+        try {
+          const updateData: any = { [field]: value };
+
+          // Recalculate if unit price changes
+          if (field === 'unitPrice' && po) {
+            const hargaBarang = calculateHargaBarang(value);
+            updateData.hargaBarang = hargaBarang;
+            updateData.modalBarang = calculateModalBarang(hargaBarang);
+          }
+
+          await updatePOItem(itemId, updateData);
+
+          // Update items state optimistically
+          setItems((prevItems) =>
+            prevItems.map((item) =>
+              item.id === itemId ? { ...item, ...updateData } : item
+            )
+          );
+
+          // Remove from local state after successful update
+          setLocalValues((prev) => {
+            const newState = { ...prev };
+            delete newState[key];
+            return newState;
+          });
+        } catch (error) {
+          toast({ title: 'Failed to update item', variant: 'destructive' });
+          // Revert local state on error
+          setLocalValues((prev) => {
+            const newState = { ...prev };
+            delete newState[key];
+            return newState;
+          });
+        }
+      }, 1000); // Increased to 1000ms debounce
+    },
+    [po, toast]
+  );
+
+  // Get value with local state fallback
+  const getFieldValue = (itemId: string, field: keyof PurchaseOrderItem, defaultValue: any) => {
+    const key = `${itemId}-${field}`;
+    return localValues[key] !== undefined ? localValues[key] : defaultValue;
   };
 
   // Handle SKU selection
-  const handleSkuChange = async (itemId: string, skuId: string, sku: Sku | null) => {
+  const handleSkuChange = async (itemId: string, _skuId: string, sku: Sku | null) => {
     try {
-      await updatePOItem(itemId, {
-        skuId: sku?.id,
-        skuCode: sku?.skuCode,
-        skuName: sku?.skuName,
-      });
+      const updateData: any = {
+        skuId: sku?.id || null,
+        skuCode: sku?.skuCode || null,
+        skuName: sku?.skuName || null,
+      };
+
+      // Also include imageUrl if the SKU has one
+      if (sku?.imageUrl) {
+        updateData.imageUrl = sku.imageUrl;
+      } else {
+        updateData.imageUrl = null;
+      }
+
+      console.log('[handleSkuChange] Saving SKU data:', { itemId, updateData });
+
+      await updatePOItem(itemId, updateData);
+
+      // Update local state immediately
+      setItems((prevItems) =>
+        prevItems.map((item) =>
+          item.id === itemId ? { ...item, ...updateData } : item
+        )
+      );
+
+      console.log('[handleSkuChange] SKU saved successfully');
     } catch (error) {
+      console.error('[handleSkuChange] Error saving SKU:', error);
       toast({ title: 'Failed to update SKU', variant: 'destructive' });
     }
   };
 
+
   // Add new row
   const handleAddRow = async () => {
-    if (!po || !storeId) return;
+    if (!po) {
+      toast({ title: 'PO not loaded', variant: 'destructive' });
+      return;
+    }
+
+    if (!storeId) {
+      toast({
+        title: 'Store not selected',
+        description: 'Please select a store first',
+        variant: 'destructive'
+      });
+      return;
+    }
 
     const newItem = {
       poId,
@@ -256,9 +358,14 @@ export default function PurchaseOrderItemsPage() {
     };
 
     try {
-      await addPOItem(newItem);
+      const newItemId = await addPOItem(newItem);
+
+      // Add to local state immediately
+      setItems((prevItems) => [...prevItems, { ...newItem, id: newItemId, createdAt: new Date() as any, updatedAt: new Date() as any }]);
+
       toast({ title: 'Row added' });
     } catch (error) {
+      console.error('Error adding row:', error);
       toast({ title: 'Failed to add row', variant: 'destructive' });
     }
   };
@@ -267,65 +374,51 @@ export default function PurchaseOrderItemsPage() {
   const handleDeleteRow = async (itemId: string) => {
     try {
       await deletePOItem(itemId);
+
+      // Remove from local state immediately
+      setItems((prevItems) => prevItems.filter((item) => item.id !== itemId));
+
       toast({ title: 'Row deleted' });
     } catch (error) {
       toast({ title: 'Failed to delete row', variant: 'destructive' });
     }
   };
 
-  // Save and create inbound shipments
+  // Save current state - ensures all SKU mappings and changes are persisted
   const handleSave = async () => {
-    if (!po || !storeId || !user) return;
-
-    // Filter items with SKU mapped
-    const itemsWithSku = items.filter((item) => item.skuId);
-
-    if (itemsWithSku.length === 0) {
-      toast({
-        title: 'No items with SKU',
-        description: 'Please map at least one item to a SKU before saving.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
     setSaving(true);
     try {
-      let successCount = 0;
+      console.log('[handleSave] Waiting for pending updates...');
+      // Wait for any pending debounced updates to complete
+      await new Promise(resolve => setTimeout(resolve, 1500));
 
-      for (const item of itemsWithSku) {
-        // Create inbound shipment for each item with SKU
-        await addInboundShipment(
-          {
-            storeId,
-            skuId: item.skuId!,
-            skuName: item.skuName || item.skuCode || '',
-            skuCode: item.skuCode || '',
-            supplierId: po.supplierId,
-            supplierName: po.supplierName,
-            purchaseOrderId: poId,
-            poNumber: po.poNumber,
-            createdBy: user.name || 'System',
-          },
-          [
-            {
-              quantity: item.quantity,
-              unit: 'pcs',
-              note: `${item.itemName} - ${item.specification}`,
-            },
-          ]
-        );
-        successCount++;
+      console.log('[handleSave] Refreshing items from database...');
+      // Refresh items to show latest saved state
+      await fetchItems();
+
+      console.log('[handleSave] Items refreshed, checking SKU data...');
+      // Log a sample item to verify SKU data is preserved
+      const itemsAfterRefresh = await getPOItems(poId);
+      const itemsWithSku = itemsAfterRefresh.filter(item => item.skuId);
+      console.log('[handleSave] Items with SKU after refresh:', itemsWithSku.length);
+      if (itemsWithSku.length > 0) {
+        console.log('[handleSave] Sample item with SKU:', itemsWithSku[0]);
       }
 
       toast({
-        title: 'Save successful!',
-        description: `${successCount} inbound shipment(s) created successfully.`,
+        title: 'Items saved successfully',
+        description: 'All SKU mappings and changes have been saved.',
       });
+
+      // If PO is still INPUTTED and there are items with SKU, prompt to update status
+      if (po?.status === 'INPUTTED' && itemsWithSku.length > 0) {
+        setIsStatusDialogOpen(true);
+      }
     } catch (error: any) {
+      console.error('[handleSave] Error:', error);
       toast({
-        title: 'Save failed',
-        description: error.message,
+        title: 'Failed to save items',
+        description: error.message || 'An error occurred',
         variant: 'destructive',
       });
     } finally {
@@ -333,20 +426,80 @@ export default function PurchaseOrderItemsPage() {
     }
   };
 
-  // Filter items by search
-  const filteredItems = React.useMemo(() => {
-    if (!searchTerm) return items;
-    const lower = searchTerm.toLowerCase();
-    return items.filter(
-      (item) =>
-        item.itemCode.toLowerCase().includes(lower) ||
-        item.itemName.toLowerCase().includes(lower) ||
-        item.skuCode?.toLowerCase().includes(lower)
-    );
-  }, [items, searchTerm]);
+  // Update PO status to IN SHIPPING
+  const handleUpdateStatusToShipping = async () => {
+    if (!po) return;
 
-  // Calculate totals
+    setUpdatingStatus(true);
+    try {
+      await addOrUpdatePurchaseOrder({
+        id: po.id,
+        storeId: po.storeId,
+        status: 'IN SHIPPING',
+      });
+
+      // Update local PO state
+      setPo({ ...po, status: 'IN SHIPPING' });
+
+      toast({
+        title: 'Status updated',
+        description: 'Purchase Order status changed to IN SHIPPING. Items will now appear in Inbound.',
+      });
+
+      setIsStatusDialogOpen(false);
+    } catch (error: any) {
+      console.error('[handleUpdateStatusToShipping] Error:', error);
+      toast({
+        title: 'Failed to update status',
+        description: error.message || 'An error occurred',
+        variant: 'destructive',
+      });
+    } finally {
+      setUpdatingStatus(false);
+    }
+  };
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = React.useState(1);
+  const itemsPerPage = 50; // Show 50 items per page
+
+  // Filter and paginate items efficiently
+  const { filteredItems, paginatedItems } = React.useMemo(() => {
+    let filtered = items;
+
+    // Only filter if there's a search term
+    if (searchTerm) {
+      const lower = searchTerm.toLowerCase();
+      filtered = items.filter(
+        (item) =>
+          item.itemCode.toLowerCase().includes(lower) ||
+          item.itemName.toLowerCase().includes(lower) ||
+          (item.skuCode?.toLowerCase() || '').includes(lower)
+      );
+    }
+
+    // Paginate
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    const paginated = filtered.slice(startIndex, endIndex);
+
+    return { filteredItems: filtered, paginatedItems: paginated };
+  }, [items, searchTerm, currentPage]);
+
+  const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
+
+  // Reset to page 1 when search term changes
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
+
+  // Calculate totals (only recalculate when items actually change)
   const totals = React.useMemo(() => {
+    // For large datasets, only calculate if we have less than 1000 items
+    // Otherwise it can freeze the UI
+    if (items.length > 1000) {
+      return { quantity: 0, amount: 0, modalBarang: 0 };
+    }
     return filteredItems.reduce(
       (acc, item) => ({
         quantity: acc.quantity + item.quantity,
@@ -355,7 +508,7 @@ export default function PurchaseOrderItemsPage() {
       }),
       { quantity: 0, amount: 0, modalBarang: 0 }
     );
-  }, [filteredItems]);
+  }, [filteredItems, items.length]);
 
   if (!po) {
     return (
@@ -366,7 +519,17 @@ export default function PurchaseOrderItemsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {/* Loading Overlay */}
+      {loading && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+          <div className="bg-white p-6 rounded-lg shadow-lg flex flex-col items-center gap-4">
+            <Loader2 className="h-12 w-12 animate-spin text-primary" />
+            <p className="text-lg font-semibold">Loading items...</p>
+            <p className="text-sm text-muted-foreground">This may take a moment for large datasets</p>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -420,7 +583,9 @@ export default function PurchaseOrderItemsPage() {
           </div>
           <div>
             <Label className="text-muted-foreground">Status</Label>
-            <Badge>{po.status}</Badge>
+            <div className="mt-1">
+              <Badge>{po.status}</Badge>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -469,6 +634,10 @@ export default function PurchaseOrderItemsPage() {
                   className="pl-8 w-[250px]"
                 />
               </div>
+              <Button size="sm" variant="outline" onClick={fetchItems} disabled={loading}>
+                <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
               <Button size="sm" onClick={handleAddRow}>
                 <PlusCircle className="mr-2 h-4 w-4" />
                 Add Row
@@ -510,26 +679,26 @@ export default function PurchaseOrderItemsPage() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredItems.map((item) => (
+                  paginatedItems.map((item) => (
                     <TableRow key={item.id}>
                       <TableCell>{item.serialNumber}</TableCell>
                       <TableCell>
                         <Input
-                          value={item.itemCode}
+                          value={getFieldValue(item.id, 'itemCode', item.itemCode)}
                           onChange={(e) => handleItemChange(item.id, 'itemCode', e.target.value)}
                           className="min-w-[120px]"
                         />
                       </TableCell>
                       <TableCell>
                         <Input
-                          value={item.itemName}
+                          value={getFieldValue(item.id, 'itemName', item.itemName)}
                           onChange={(e) => handleItemChange(item.id, 'itemName', e.target.value)}
                           className="min-w-[200px]"
                         />
                       </TableCell>
                       <TableCell>
                         <Input
-                          value={item.specification}
+                          value={getFieldValue(item.id, 'specification', item.specification)}
                           onChange={(e) =>
                             handleItemChange(item.id, 'specification', e.target.value)
                           }
@@ -538,28 +707,28 @@ export default function PurchaseOrderItemsPage() {
                       </TableCell>
                       <TableCell>
                         <NumericInput
-                          value={item.quantity}
+                          value={getFieldValue(item.id, 'quantity', item.quantity)}
                           onValueChange={(value) => handleItemChange(item.id, 'quantity', value)}
                           className="w-[100px]"
                         />
                       </TableCell>
                       <TableCell>
                         <NumericInput
-                          value={item.unitPrice}
+                          value={getFieldValue(item.id, 'unitPrice', item.unitPrice)}
                           onValueChange={(value) => handleItemChange(item.id, 'unitPrice', value)}
                           className="w-[100px]"
                         />
                       </TableCell>
                       <TableCell>
                         <NumericInput
-                          value={item.discount}
+                          value={getFieldValue(item.id, 'discount', item.discount)}
                           onValueChange={(value) => handleItemChange(item.id, 'discount', value)}
                           className="w-[100px]"
                         />
                       </TableCell>
                       <TableCell>
                         <NumericInput
-                          value={item.amount}
+                          value={getFieldValue(item.id, 'amount', item.amount)}
                           onValueChange={(value) => handleItemChange(item.id, 'amount', value)}
                           className="w-[100px]"
                         />
@@ -597,6 +766,37 @@ export default function PurchaseOrderItemsPage() {
               </TableBody>
             </Table>
           </div>
+          {/* Pagination Controls */}
+          {filteredItems.length > itemsPerPage && (
+            <div className="flex items-center justify-between px-6 py-4 border-t">
+              <div className="text-sm text-muted-foreground">
+                Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredItems.length)} of {filteredItems.length} items
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Previous
+                </Button>
+                <div className="text-sm">
+                  Page {currentPage} of {totalPages}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
         <CardFooter className="flex justify-between border-t pt-6">
           <div className="grid grid-cols-3 gap-8">
@@ -627,7 +827,7 @@ export default function PurchaseOrderItemsPage() {
             ) : (
               <>
                 <Save className="mr-2 h-4 w-4" />
-                Save & Create Shipments
+                Save Items
               </>
             )}
           </Button>
@@ -665,6 +865,48 @@ export default function PurchaseOrderItemsPage() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleConfirmUpload}>Confirm Upload</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Status Update Dialog */}
+      <AlertDialog open={isStatusDialogOpen} onOpenChange={setIsStatusDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Update PO Status to IN SHIPPING?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div>
+                <p>
+                  You have saved items with SKU mappings. Would you like to update this Purchase Order's status to <strong>"IN SHIPPING"</strong>?
+                </p>
+                <div className="mt-4">
+                  <strong>Benefits:</strong>
+                  <ul className="list-disc list-inside mt-2 space-y-1">
+                    <li>Items will appear in Inbound Management under "Items in Shipping"</li>
+                    <li>Shows estimated arrival date (Order Date + 1 month)</li>
+                    <li>Warehouse staff can see incoming stock</li>
+                  </ul>
+                </div>
+                <p className="mt-4">
+                  You can also change the status manually later from the Purchase Orders page.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={updatingStatus}>
+              Not Now
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={handleUpdateStatusToShipping} disabled={updatingStatus}>
+              {updatingStatus ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Updating...
+                </>
+              ) : (
+                'Yes, Update to IN SHIPPING'
+              )}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

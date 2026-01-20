@@ -3,7 +3,8 @@
     "allow": [
       "Bash(npm run typecheck:*)",
       "Bash(npx tsc:*)",
-      "Bash(timeout 30 npm run dev:*)"
+      "Bash(timeout 30 npm run dev:*)",
+      "Bash(npm run build:*)"
     ]
   }
 }

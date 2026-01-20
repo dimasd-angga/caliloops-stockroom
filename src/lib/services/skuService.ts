@@ -71,6 +71,21 @@ export const getPaginatedSkus = async (
   };
 };
 
+export const getSkuById = async (skuId: string): Promise<Sku | null> => {
+  try {
+    const skuRef = doc(firestore, 'skus', skuId);
+    const skuDoc = await getDoc(skuRef);
+
+    if (skuDoc.exists()) {
+      return { id: skuDoc.id, ...skuDoc.data() } as Sku;
+    }
+    return null;
+  } catch (error) {
+    console.error('Error fetching SKU by ID:', error);
+    return null;
+  }
+};
+
 export const checkSkuExists = async (skuCode: string, storeId: string): Promise<boolean> => {
     const q = query(
       skusCollection,
@@ -150,4 +165,35 @@ export const getAllSkusByStore = async (storeId: string): Promise<Sku[]> => {
   );
   const snapshot = await getDocs(q);
   return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Sku));
+};
+
+// Search SKUs by keyword (searches in skuCode, skuName, and keywords array)
+export const searchSkus = async (storeId: string, searchTerm: string, limitCount: number = 20): Promise<Sku[]> => {
+  if (!searchTerm || searchTerm.length < 3) {
+    return [];
+  }
+
+  const lowerSearch = searchTerm.toLowerCase();
+
+  // Search by skuCode prefix
+  const q = query(
+    skusCollection,
+    where('storeId', '==', storeId),
+    orderBy('skuCode', 'asc'),
+    limit(limitCount)
+  );
+
+  const snapshot = await getDocs(q);
+  const allSkus = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Sku));
+
+  // Client-side filtering for better search (case-insensitive, partial match)
+  const filtered = allSkus.filter((sku) => {
+    const skuCodeMatch = sku.skuCode.toLowerCase().includes(lowerSearch);
+    const skuNameMatch = sku.skuName.toLowerCase().includes(lowerSearch);
+    const keywordsMatch = sku.keywords?.some(k => k.toLowerCase().includes(lowerSearch)) || false;
+
+    return skuCodeMatch || skuNameMatch || keywordsMatch;
+  });
+
+  return filtered.slice(0, limitCount);
 };

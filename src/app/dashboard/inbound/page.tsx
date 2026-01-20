@@ -12,10 +12,26 @@ import { DocumentData, DocumentSnapshot } from 'firebase/firestore';
 export default function InboundPage() {
   const { toast } = useToast();
   const { user, selectedStoreId, permissions } = React.useContext(UserContext);
-  
+
   const [skus, setSkus] = React.useState<Sku[]>([]);
   const [loadingSkus, setLoadingSkus] = React.useState(true);
   const [selectedSku, setSelectedSku] = React.useState<Sku | null>(null);
+
+  // Read URL parameters for PO Receive flow
+  const [urlParams] = React.useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      return {
+        skuId: params.get('skuId'),
+        supplierId: params.get('supplierId'),
+        supplierName: params.get('supplierName'),
+        poId: params.get('poId'),
+        poNumber: params.get('poNumber'),
+        poReceiveItemId: params.get('poReceiveItemId'),
+      };
+    }
+    return {};
+  });
 
   // Pagination state
   const [pageCursors, setPageCursors] = React.useState<(DocumentSnapshot<DocumentData> | null)[]>([null]);
@@ -43,7 +59,7 @@ export default function InboundPage() {
 
       try {
         const { skus: fetchedSkus, last, totalCount } = await getPaginatedSkus(storeIdToQuery, PAGE_SIZE, searchTerm, null);
-        
+
         setSkus(fetchedSkus);
         setTotalSkus(totalCount);
         
@@ -133,14 +149,59 @@ export default function InboundPage() {
 
   const handleBackToList = () => {
     setSelectedSku(null);
+    // Clear URL parameters
+    if (typeof window !== 'undefined') {
+      window.history.replaceState({}, '', '/dashboard/inbound');
+    }
     // Trigger a re-fetch of the first page to ensure data is fresh
     // A tiny change in search term and then resetting it forces the effect to re-run.
     setSearchTerm(st => st === '' ? ' ' : '');
     setTimeout(() => setSearchTerm(''), 50);
   };
 
+  // Auto-select SKU from URL parameters (for PO Receive flow)
+  React.useEffect(() => {
+    const autoSelectSku = async () => {
+      if (urlParams.skuId && !selectedSku) {
+        // Find SKU in current list first
+        const skuFromList = skus.find(s => s.id === urlParams.skuId);
+        if (skuFromList) {
+          console.log('Auto-selecting SKU from list:', skuFromList);
+          setSelectedSku(skuFromList);
+        } else {
+          // Fetch SKU directly if not in list
+          try {
+            const storeIdToQuery = user?.email === 'superadmin@caliloops.com' ? selectedStoreId : user?.storeId;
+            if (storeIdToQuery) {
+              // We need to fetch this specific SKU - for now, just auto-select from list when it loads
+              console.log('SKU not found in current list, will select when loaded');
+            }
+          } catch (error) {
+            console.error('Error auto-selecting SKU:', error);
+          }
+        }
+      }
+    };
+
+    autoSelectSku();
+  }, [urlParams.skuId, skus, selectedSku, user, selectedStoreId]);
+
   if (selectedSku) {
-    return <SkuDetail sku={selectedSku} onBack={handleBackToList} onSkuUpdate={handleSkuUpdate} permissions={permissions} />;
+    return (
+      <SkuDetail
+        sku={selectedSku}
+        onBack={handleBackToList}
+        onSkuUpdate={handleSkuUpdate}
+        permissions={permissions}
+        autoFillData={urlParams.supplierId && urlParams.poId ? {
+          supplierId: urlParams.supplierId,
+          supplierName: urlParams.supplierName || '',
+          poId: urlParams.poId,
+          poNumber: urlParams.poNumber || '',
+          poReceiveItemId: urlParams.poReceiveItemId || '',
+        } : undefined}
+      />
+    );
   }
 
   return (
