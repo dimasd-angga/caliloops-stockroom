@@ -175,25 +175,48 @@ export const searchSkus = async (storeId: string, searchTerm: string, limitCount
 
   const lowerSearch = searchTerm.toLowerCase();
 
-  // Search by skuCode prefix
+  // Fetch ALL SKUs for the store (no limit) to ensure we find all matches
+  // Since Firestore doesn't support case-insensitive or partial text search,
+  // we need to fetch all SKUs and filter client-side
   const q = query(
     skusCollection,
-    where('storeId', '==', storeId),
-    orderBy('skuCode', 'asc'),
-    limit(limitCount)
+    where('storeId', '==', storeId)
   );
 
   const snapshot = await getDocs(q);
   const allSkus = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Sku));
 
-  // Client-side filtering for better search (case-insensitive, partial match)
-  const filtered = allSkus.filter((sku) => {
-    const skuCodeMatch = sku.skuCode.toLowerCase().includes(lowerSearch);
-    const skuNameMatch = sku.skuName.toLowerCase().includes(lowerSearch);
-    const keywordsMatch = sku.keywords?.some(k => k.toLowerCase().includes(lowerSearch)) || false;
+  // Client-side filtering with ranking
+  const matches = allSkus
+    .map((sku) => {
+      const skuCodeLower = sku.skuCode.toLowerCase();
+      const skuNameLower = sku.skuName.toLowerCase();
 
-    return skuCodeMatch || skuNameMatch || keywordsMatch;
-  });
+      // Exact match gets highest priority
+      if (skuCodeLower === lowerSearch || skuNameLower === lowerSearch) {
+        return { sku, score: 100 };
+      }
 
-  return filtered.slice(0, limitCount);
+      // Starts with match gets high priority
+      if (skuCodeLower.startsWith(lowerSearch) || skuNameLower.startsWith(lowerSearch)) {
+        return { sku, score: 50 };
+      }
+
+      // Contains match gets medium priority
+      const skuCodeMatch = skuCodeLower.includes(lowerSearch);
+      const skuNameMatch = skuNameLower.includes(lowerSearch);
+      const keywordsMatch = sku.keywords?.some(k => k.toLowerCase().includes(lowerSearch)) || false;
+
+      if (skuCodeMatch || skuNameMatch || keywordsMatch) {
+        return { sku, score: skuCodeMatch ? 30 : (skuNameMatch ? 20 : 10) };
+      }
+
+      return null;
+    })
+    .filter((match): match is { sku: Sku; score: number } => match !== null)
+    .sort((a, b) => b.score - a.score) // Sort by relevance
+    .slice(0, limitCount)
+    .map(m => m.sku);
+
+  return matches;
 };

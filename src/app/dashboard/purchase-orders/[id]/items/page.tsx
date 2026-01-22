@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { useRouter, useParams } from 'next/navigation';
+import Image from 'next/image';
 import {
   Card,
   CardHeader,
@@ -31,6 +32,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import type { PurchaseOrder, PurchaseOrderItem, Sku } from '@/lib/types';
@@ -59,6 +67,7 @@ import {
   ChevronLeft,
   ChevronRight,
   RefreshCw,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { UserContext } from '@/app/dashboard/layout';
 import { format } from 'date-fns';
@@ -85,10 +94,6 @@ export default function PurchaseOrderItemsPage() {
 
   // Search state
   const [searchTerm, setSearchTerm] = React.useState('');
-
-  // Status update dialog
-  const [isStatusDialogOpen, setIsStatusDialogOpen] = React.useState(false);
-  const [updatingStatus, setUpdatingStatus] = React.useState(false);
 
   const storeId = user?.email === 'superadmin@caliloops.com' ? selectedStoreId : user?.storeId;
 
@@ -409,11 +414,6 @@ export default function PurchaseOrderItemsPage() {
         title: 'Items saved successfully',
         description: 'All SKU mappings and changes have been saved.',
       });
-
-      // If PO is still INPUTTED and there are items with SKU, prompt to update status
-      if (po?.status === 'INPUTTED' && itemsWithSku.length > 0) {
-        setIsStatusDialogOpen(true);
-      }
     } catch (error: any) {
       console.error('[handleSave] Error:', error);
       toast({
@@ -423,39 +423,6 @@ export default function PurchaseOrderItemsPage() {
       });
     } finally {
       setSaving(false);
-    }
-  };
-
-  // Update PO status to IN SHIPPING
-  const handleUpdateStatusToShipping = async () => {
-    if (!po) return;
-
-    setUpdatingStatus(true);
-    try {
-      await addOrUpdatePurchaseOrder({
-        id: po.id,
-        storeId: po.storeId,
-        status: 'IN SHIPPING',
-      });
-
-      // Update local PO state
-      setPo({ ...po, status: 'IN SHIPPING' });
-
-      toast({
-        title: 'Status updated',
-        description: 'Purchase Order status changed to IN SHIPPING. Items will now appear in Inbound.',
-      });
-
-      setIsStatusDialogOpen(false);
-    } catch (error: any) {
-      console.error('[handleUpdateStatusToShipping] Error:', error);
-      toast({
-        title: 'Failed to update status',
-        description: error.message || 'An error occurred',
-        variant: 'destructive',
-      });
-    } finally {
-      setUpdatingStatus(false);
     }
   };
 
@@ -490,7 +457,10 @@ export default function PurchaseOrderItemsPage() {
 
   // Reset to page 1 when search term changes
   React.useEffect(() => {
-    setCurrentPage(1);
+    // Use startTransition to prevent interrupting user input
+    React.startTransition(() => {
+      setCurrentPage(1);
+    });
   }, [searchTerm]);
 
   // Calculate totals (only recalculate when items actually change)
@@ -650,6 +620,7 @@ export default function PurchaseOrderItemsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-[80px]">Photo</TableHead>
                   <TableHead className="w-[60px]">序号</TableHead>
                   <TableHead className="min-w-[120px]">货号</TableHead>
                   <TableHead className="min-w-[200px]">货品名称</TableHead>
@@ -668,19 +639,54 @@ export default function PurchaseOrderItemsPage() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={13} className="h-24 text-center">
+                    <TableCell colSpan={14} className="h-24 text-center">
                       <Loader2 className="mx-auto h-8 w-8 animate-spin" />
                     </TableCell>
                   </TableRow>
                 ) : filteredItems.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={13} className="h-24 text-center">
+                    <TableCell colSpan={14} className="h-24 text-center">
                       No items found. Upload Excel or add rows manually.
                     </TableCell>
                   </TableRow>
                 ) : (
                   paginatedItems.map((item) => (
                     <TableRow key={item.id}>
+                      <TableCell>
+                        {item.imageUrl ? (
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <div className="w-12 h-12 relative cursor-pointer hover:opacity-80 transition-opacity">
+                                <Image
+                                  src={item.imageUrl}
+                                  alt={item.itemName || 'Product'}
+                                  fill
+                                  className="rounded-md object-cover"
+                                  sizes="48px"
+                                />
+                              </div>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-2xl">
+                              <DialogHeader>
+                                <DialogTitle>{item.itemName}</DialogTitle>
+                              </DialogHeader>
+                              <div className="relative w-full" style={{ aspectRatio: '1' }}>
+                                <Image
+                                  src={item.imageUrl}
+                                  alt={item.itemName || 'Product'}
+                                  fill
+                                  className="rounded-md object-contain"
+                                  sizes="(max-width: 768px) 100vw, 50vw"
+                                />
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+                        ) : (
+                          <div className="w-12 h-12 bg-muted rounded-md flex items-center justify-center">
+                            <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                          </div>
+                        )}
+                      </TableCell>
                       <TableCell>{item.serialNumber}</TableCell>
                       <TableCell>
                         <Input
@@ -865,48 +871,6 @@ export default function PurchaseOrderItemsPage() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleConfirmUpload}>Confirm Upload</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Status Update Dialog */}
-      <AlertDialog open={isStatusDialogOpen} onOpenChange={setIsStatusDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Update PO Status to IN SHIPPING?</AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div>
-                <p>
-                  You have saved items with SKU mappings. Would you like to update this Purchase Order's status to <strong>"IN SHIPPING"</strong>?
-                </p>
-                <div className="mt-4">
-                  <strong>Benefits:</strong>
-                  <ul className="list-disc list-inside mt-2 space-y-1">
-                    <li>Items will appear in Inbound Management under "Items in Shipping"</li>
-                    <li>Shows estimated arrival date (Order Date + 1 month)</li>
-                    <li>Warehouse staff can see incoming stock</li>
-                  </ul>
-                </div>
-                <p className="mt-4">
-                  You can also change the status manually later from the Purchase Orders page.
-                </p>
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={updatingStatus}>
-              Not Now
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={handleUpdateStatusToShipping} disabled={updatingStatus}>
-              {updatingStatus ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Updating...
-                </>
-              ) : (
-                'Yes, Update to IN SHIPPING'
-              )}
-            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -31,6 +31,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Image as ImageIcon,
+  ExternalLink,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import type { PurchaseOrder, POReceive, POReceiveItem } from '@/lib/types';
@@ -516,6 +517,7 @@ export default function POReceivePage() {
                   <TableHead className="w-[120px]">Cost Per Pcs</TableHead>
                   <TableHead className="w-[120px]">Modal Barang</TableHead>
                   <TableHead className="min-w-[150px]">Actions</TableHead>
+                  <TableHead className="w-[120px]">Inbound Details</TableHead>
                   <TableHead className="w-[100px]">Qty Diterima<br/>收到的数量</TableHead>
                   <TableHead className="w-[100px]">Qty Tidak Diterima<br/>没收到的数量</TableHead>
                   <TableHead className="w-[100px]">Qty Rusak<br/>坏掉的数量</TableHead>
@@ -527,13 +529,13 @@ export default function POReceivePage() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={20} className="h-24 text-center">
+                    <TableCell colSpan={21} className="h-24 text-center">
                       <Loader2 className="mx-auto h-8 w-8 animate-spin" />
                     </TableCell>
                   </TableRow>
                 ) : items.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={20} className="h-24 text-center">
+                    <TableCell colSpan={21} className="h-24 text-center">
                       No items found.
                     </TableCell>
                   </TableRow>
@@ -600,6 +602,30 @@ export default function POReceivePage() {
                               Input Rusak
                             </Button>
                           </div>
+                        </TableCell>
+                        <TableCell>
+                          {item.qtyReceived > 0 && item.skuId ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                const params = new URLSearchParams({
+                                  skuId: item.skuId!,
+                                  supplierId: poReceive?.supplierId || '',
+                                  supplierName: poReceive?.supplierName || '',
+                                  poId: item.poId,
+                                  poNumber: item.poNumber,
+                                  poReceiveItemId: item.id,
+                                });
+                                window.open(`/dashboard/inbound?${params.toString()}`, '_blank');
+                              }}
+                            >
+                              <ExternalLink className="mr-2 h-4 w-4" />
+                              View Inbound
+                            </Button>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">-</span>
+                          )}
                         </TableCell>
                         <TableCell className={`font-semibold ${item.qtyReceived > 0 ? 'text-green-600' : ''}`}>
                           {item.qtyReceived}

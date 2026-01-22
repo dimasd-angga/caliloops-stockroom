@@ -223,8 +223,6 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions, a
             console.log('[SkuDetail] Auto-filling form with:', autoFillData);
             setSelectedSupplierId(autoFillData.supplierId);
             setSelectedPurchaseOrderId(autoFillData.poId);
-            // Auto-open the modal
-            setIsCreateShipmentModalOpen(true);
         }
     }, [autoFillData]);
 
@@ -773,53 +771,6 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions, a
                 </div>
             </div>
 
-            {/* Shipping POs Information */}
-            {loadingShippingInfo ? (
-                <Card>
-                    <CardContent className="p-6">
-                        <div className="flex items-center gap-2">
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            <span className="text-sm text-muted-foreground">Loading shipping information...</span>
-                        </div>
-                    </CardContent>
-                </Card>
-            ) : shippingPOs.length > 0 && (
-                <Card className="border-blue-200 bg-blue-50/50 dark:bg-blue-950/20">
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-blue-700 dark:text-blue-400">
-                            <Ship className="h-5 w-5" />
-                            Items in Shipping
-                        </CardTitle>
-                        <CardDescription>
-                            The following Purchase Orders are currently being shipped and will arrive soon
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                            {shippingPOs.map((shipping, index) => (
-                                <div key={index} className="bg-white dark:bg-gray-900 rounded-lg border p-4 space-y-2">
-                                    <div className="flex items-center gap-2">
-                                        <Package className="h-4 w-4 text-blue-600" />
-                                        <span className="font-semibold text-lg">{shipping.quantity} Pcs</span>
-                                    </div>
-                                    <div className="text-sm space-y-1">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-muted-foreground">PO Number:</span>
-                                            <Badge variant="outline">{shipping.poNumber}</Badge>
-                                        </div>
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-muted-foreground">Est. Arrival:</span>
-                                            <span className="font-medium text-blue-600">
-                                                {format(shipping.estimatedArrival, 'dd MMM yyyy')}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </CardContent>
-                </Card>
-            )}
 
             <Card>
                 <CardContent className="p-0">
@@ -843,25 +794,27 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions, a
                                     <TableHead>Status</TableHead>
                                     <TableHead>Printed</TableHead>
                                     <TableHead>Shipment Date</TableHead>
+                                    <TableHead>Shipping Info</TableHead>
                                     <TableHead className='text-right'>Actions</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {loadingSkuDetails ? (
                                     <TableRow>
-                                        <TableCell colSpan={9} className="h-24 text-center">
+                                        <TableCell colSpan={10} className="h-24 text-center">
                                             <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
                                         </TableCell>
                                     </TableRow>
                                 ) : skuShipments.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={9} className="h-24 text-center">
+                                        <TableCell colSpan={10} className="h-24 text-center">
                                             No shipments found for this SKU yet.
                                         </TableCell>
                                     </TableRow>
                                 ) : (
                                     skuShipments.map((shipment) => (
                                         shipment.packs.map((pack) => {
+                                            const shippingInfo = shippingPOs.find(sp => sp.poNumber === shipment.poNumber);
                                             return (
                                                 <TableRow key={pack.id}>
                                                     {(hasUnprintedItems || permissions?.canReprintBarcode || permissions?.hasFullAccess) && (
@@ -905,6 +858,16 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions, a
                                                         </Badge>
                                                     </TableCell>
                                                     <TableCell>{shipment.createdAt.toDate().toLocaleDateString()}</TableCell>
+                                                    <TableCell>
+                                                        {shippingInfo ? (
+                                                            <div className="text-sm">
+                                                                <div className="font-semibold text-blue-600">{shippingInfo.quantity} Pcs In Shipping</div>
+                                                                <div className="text-muted-foreground">Est: {format(shippingInfo.estimatedArrival, 'dd MMM yyyy')}</div>
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-sm text-muted-foreground">-</span>
+                                                        )}
+                                                    </TableCell>
                                                     <TableCell className="text-right">
                                                         {pack.barcodeId && (!pack.isPrinted || permissions?.canReprintBarcode || permissions?.hasFullAccess) && (
                                                             <Button

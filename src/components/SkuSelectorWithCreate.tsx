@@ -1,5 +1,6 @@
 'use client';
 import * as React from 'react';
+import Image from 'next/image';
 import {
   Select,
   SelectContent,
@@ -8,7 +9,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
-import { Search, PlusCircle, Loader2 } from 'lucide-react';
+import { Search, PlusCircle, Loader2, Image as ImageIcon } from 'lucide-react';
 import { SkuCreationModal } from './SkuCreationModal';
 import type { Sku } from '@/lib/types';
 import { searchSkus, getSkuById } from '@/lib/services/skuService';
@@ -36,6 +37,16 @@ export function SkuSelectorWithCreate({
 
   // Debounce search
   const searchTimeoutRef = React.useRef<NodeJS.Timeout>();
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
+  const shouldRestoreFocusRef = React.useRef(false);
+
+  // Restore focus after state updates
+  React.useEffect(() => {
+    if (shouldRestoreFocusRef.current && searchInputRef.current) {
+      searchInputRef.current.focus();
+      shouldRestoreFocusRef.current = false;
+    }
+  }, [skus, loading]);
 
   // Fetch selected SKU details if value is provided
   React.useEffect(() => {
@@ -86,6 +97,8 @@ export function SkuSelectorWithCreate({
   // Search SKUs when user types
   const handleSearchChange = (search: string) => {
     setSearchTerm(search);
+    // Mark that we should restore focus after state updates
+    shouldRestoreFocusRef.current = true;
 
     // Clear previous timeout
     if (searchTimeoutRef.current) {
@@ -94,20 +107,31 @@ export function SkuSelectorWithCreate({
 
     // Only search if 3+ characters
     if (search.length < 3) {
-      setSkus([]);
+      // Use startTransition to prevent interrupting user input
+      React.startTransition(() => {
+        setSkus([]);
+      });
       return;
     }
 
     // Debounce search by 300ms
     searchTimeoutRef.current = setTimeout(async () => {
-      setLoading(true);
+      // Use startTransition to prevent interrupting user input
+      React.startTransition(() => {
+        setLoading(true);
+      });
       try {
         const results = await searchSkus(storeId, search, 20);
-        setSkus(results);
+        // Use startTransition to prevent interrupting user input
+        React.startTransition(() => {
+          setSkus(results);
+          setLoading(false);
+        });
       } catch (error) {
         console.error('Error searching SKUs:', error);
-      } finally {
-        setLoading(false);
+        React.startTransition(() => {
+          setLoading(false);
+        });
       }
     }, 300);
   };
@@ -136,17 +160,40 @@ export function SkuSelectorWithCreate({
       <Select value={value} onValueChange={handleValueChange} disabled={disabled}>
         <SelectTrigger>
           <SelectValue placeholder={placeholder}>
-            {selectedSku ? `${selectedSku.skuCode} - ${selectedSku.skuName}` : placeholder}
+            {selectedSku ? (
+              <div className="flex items-center gap-2">
+                {selectedSku.imageUrl ? (
+                  <div className="w-6 h-6 relative flex-shrink-0">
+                    <Image
+                      src={selectedSku.imageUrl}
+                      alt={selectedSku.skuName}
+                      fill
+                      className="rounded object-cover"
+                      sizes="24px"
+                    />
+                  </div>
+                ) : (
+                  <div className="w-6 h-6 bg-muted rounded flex items-center justify-center flex-shrink-0">
+                    <ImageIcon className="h-3 w-3 text-muted-foreground" />
+                  </div>
+                )}
+                <span className="truncate">{selectedSku.skuCode} - {selectedSku.skuName}</span>
+              </div>
+            ) : (
+              placeholder
+            )}
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
-          <div className="flex items-center px-2 pb-2 gap-2">
+          <div className="flex items-center px-2 pb-2 gap-2" onPointerDown={(e) => e.stopPropagation()}>
             <Search className="h-4 w-4 shrink-0 opacity-50" />
             <Input
+              ref={searchInputRef}
               placeholder="Type 3+ chars to search..."
               value={searchTerm}
               onChange={(e) => handleSearchChange(e.target.value)}
               className="h-8"
+              autoFocus
             />
             {loading && <Loader2 className="h-4 w-4 animate-spin" />}
           </div>
@@ -168,7 +215,27 @@ export function SkuSelectorWithCreate({
           )}
           {skus.map((sku) => (
             <SelectItem key={sku.id} value={sku.id}>
-              {sku.skuCode} - {sku.skuName}
+              <div className="flex items-center gap-2">
+                {sku.imageUrl ? (
+                  <div className="w-8 h-8 relative flex-shrink-0">
+                    <Image
+                      src={sku.imageUrl}
+                      alt={sku.skuName}
+                      fill
+                      className="rounded object-cover"
+                      sizes="32px"
+                    />
+                  </div>
+                ) : (
+                  <div className="w-8 h-8 bg-muted rounded flex items-center justify-center flex-shrink-0">
+                    <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                )}
+                <div className="flex flex-col min-w-0">
+                  <span className="font-medium truncate">{sku.skuCode}</span>
+                  <span className="text-xs text-muted-foreground truncate">{sku.skuName}</span>
+                </div>
+              </div>
             </SelectItem>
           ))}
         </SelectContent>
