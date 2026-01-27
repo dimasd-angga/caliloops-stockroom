@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useToast } from '@/hooks/use-toast';
 import type { Sku, Permissions } from '@/lib/types';
-import { getPaginatedSkus } from '@/lib/services/skuService';
+import { getPaginatedSkus, getSkuById } from '@/lib/services/skuService';
 import { UserContext } from '@/app/dashboard/layout';
 import { SkuList } from './components/SkuList';
 import { SkuDetail } from './components/SkuDetail';
@@ -169,12 +169,15 @@ export default function InboundPage() {
           console.log('Auto-selecting SKU from list:', skuFromList);
           setSelectedSku(skuFromList);
         } else {
-          // Fetch SKU directly if not in list
+          // Fetch SKU directly if not in list (pagination issue)
           try {
-            const storeIdToQuery = user?.email === 'superadmin@caliloops.com' ? selectedStoreId : user?.storeId;
-            if (storeIdToQuery) {
-              // We need to fetch this specific SKU - for now, just auto-select from list when it loads
-              console.log('SKU not found in current list, will select when loaded');
+            console.log('SKU not found in current list, fetching directly...');
+            const fetchedSku = await getSkuById(urlParams.skuId);
+            if (fetchedSku) {
+              console.log('Auto-selecting fetched SKU:', fetchedSku);
+              setSelectedSku(fetchedSku);
+            } else {
+              console.warn('SKU not found:', urlParams.skuId);
             }
           } catch (error) {
             console.error('Error auto-selecting SKU:', error);

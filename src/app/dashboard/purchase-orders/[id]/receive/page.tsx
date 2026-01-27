@@ -49,6 +49,13 @@ import { format } from 'date-fns';
 import { InputRusakModal } from '@/components/InputRusakModal';
 import { InboundShipmentModal } from '@/components/InboundShipmentModal';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+  Dialog,
+  DialogTrigger,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import Image from 'next/image';
 import { addInboundShipment } from '@/lib/services/inboundService';
 import { updateReceivedQuantity } from '@/lib/services/poReceiveService';
@@ -558,14 +565,32 @@ export default function POReceivePage() {
                         </TableCell>
                         <TableCell>
                           {item.imageUrl ? (
-                            <div className="relative w-16 h-16">
-                              <Image
-                                src={item.imageUrl}
-                                alt={item.itemName}
-                                fill
-                                className="object-cover rounded"
-                              />
-                            </div>
+                            <Dialog>
+                              <DialogTrigger asChild>
+                                <div className="w-16 h-16 relative cursor-pointer hover:opacity-80 transition-opacity">
+                                  <Image
+                                    src={item.imageUrl}
+                                    alt={item.itemName}
+                                    fill
+                                    className="object-cover rounded"
+                                  />
+                                </div>
+                              </DialogTrigger>
+                              <DialogContent className="max-w-2xl">
+                                <DialogHeader>
+                                  <DialogTitle>{item.itemName}</DialogTitle>
+                                </DialogHeader>
+                                <div className="relative w-full" style={{ aspectRatio: '1' }}>
+                                  <Image
+                                    src={item.imageUrl}
+                                    alt={item.itemName}
+                                    fill
+                                    className="rounded-md object-contain"
+                                    sizes="(max-width: 768px) 100vw, 50vw"
+                                  />
+                                </div>
+                              </DialogContent>
+                            </Dialog>
                           ) : (
                             <div className="w-16 h-16 bg-gray-100 rounded flex items-center justify-center">
                               <ImageIcon className="h-6 w-6 text-gray-400" />

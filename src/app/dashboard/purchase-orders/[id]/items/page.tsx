@@ -473,7 +473,7 @@ export default function PurchaseOrderItemsPage() {
     return filteredItems.reduce(
       (acc, item) => ({
         quantity: acc.quantity + item.quantity,
-        amount: acc.amount + item.amount,
+        amount: acc.amount + (item.quantity * item.unitPrice - item.discount),
         modalBarang: acc.modalBarang + item.modalBarang * item.quantity,
       }),
       { quantity: 0, amount: 0, modalBarang: 0 }
