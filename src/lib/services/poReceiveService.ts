@@ -158,7 +158,10 @@ export const updateReceivedQuantity = async (
     itemData.quantity - newQtyReceived - itemData.qtyDamaged
   );
   const newTotalPcsFinal = newQtyReceived + newQtyNotReceived + itemData.qtyDamaged;
-  const newAmountNotReceived = newQtyNotReceived * itemData.unitPrice;
+
+  // Calculate refund amount: (qty not received) × (total biaya / total order qty)
+  const costPerUnit = itemData.quantity > 0 ? itemData.amount / itemData.quantity : 0;
+  const newAmountNotReceived = newQtyNotReceived * costPerUnit;
 
   await updateDoc(itemRef, {
     qtyReceived: newQtyReceived,
@@ -199,8 +202,11 @@ export const updateDamagedQuantity = async (
     itemData.quantity - itemData.qtyReceived - damagedQty
   );
   const newTotalPcsFinal = itemData.qtyReceived + newQtyNotReceived + damagedQty;
-  const newAmountNotReceived = newQtyNotReceived * itemData.unitPrice;
-  const newAmountDamaged = damagedQty * itemData.unitPrice;
+
+  // Calculate refund amounts: (qty) × (total biaya / total order qty)
+  const costPerUnit = itemData.quantity > 0 ? itemData.amount / itemData.quantity : 0;
+  const newAmountNotReceived = newQtyNotReceived * costPerUnit;
+  const newAmountDamaged = damagedQty * costPerUnit;
 
   await updateDoc(itemRef, {
     qtyDamaged: damagedQty,

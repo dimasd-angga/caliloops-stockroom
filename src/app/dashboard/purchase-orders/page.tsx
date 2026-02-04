@@ -32,7 +32,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { PlusCircle, Loader2, FileText, AlertTriangle, Search, ChevronsRight, MoreHorizontal, Edit, Trash2, CheckCircle, XCircle, ChevronDown, FileSpreadsheet, ListChecks, PackageCheck } from 'lucide-react';
+import { PlusCircle, Loader2, FileText, AlertTriangle, Search, ChevronsRight, MoreHorizontal, Edit, Trash2, CheckCircle, XCircle, ChevronDown, FileSpreadsheet, ListChecks, PackageCheck, FileBarChart } from 'lucide-react';
 import {
     DropdownMenu,
     DropdownMenuCheckboxItem,
@@ -569,6 +569,9 @@ export default function PurchaseOrdersPage() {
                                                             </DropdownMenuItem>
                                                             <DropdownMenuItem onClick={() => router.push(`/dashboard/purchase-orders/${po.id}/receive`)}>
                                                                 <PackageCheck className="mr-2 h-4 w-4" /> PO Receive
+                                                            </DropdownMenuItem>
+                                                            <DropdownMenuItem onClick={() => router.push(`/dashboard/purchase-orders/${po.id}/receive/recap`)}>
+                                                                <FileBarChart className="mr-2 h-4 w-4" /> Recap
                                                             </DropdownMenuItem>
                                                             <DropdownMenuSeparator />
                                                             <DropdownMenuItem onClick={() => router.push(`/dashboard/purchase-orders/${po.id}`)}>

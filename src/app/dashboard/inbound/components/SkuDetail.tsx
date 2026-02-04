@@ -149,6 +149,9 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions, a
     const [shippingPOs, setShippingPOs] = React.useState<Array<{ quantity: number; poNumber: string; estimatedArrival: Date }>>([]);
     const [loadingShippingInfo, setLoadingShippingInfo] = React.useState(false);
 
+    // PO Order Dates for Perkiraan Tiba
+    const [poOrderDates, setPoOrderDates] = React.useState<Map<string, Date>>(new Map());
+
     const pdfFilename = `barcodes-${format(new Date(), 'yyyy-MM-dd_HH-mm-ss')}.pdf`;
     const { toPDF, targetRef } = usePDF({
         filename: pdfFilename,
@@ -243,6 +246,23 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions, a
         try {
             const shipments = await getShipmentsBySku(skuToFetch.id);
             setSkuShipments(shipments);
+
+            // Fetch PO order dates for each unique purchaseOrderId
+            const uniquePOIds = [...new Set(shipments.map(s => s.purchaseOrderId))];
+            const { getPurchaseOrderById } = await import('@/lib/services/purchaseOrderService');
+
+            const orderDatesMap = new Map<string, Date>();
+            for (const poId of uniquePOIds) {
+                try {
+                    const po = await getPurchaseOrderById(poId);
+                    if (po && po.orderDate) {
+                        orderDatesMap.set(poId, po.orderDate.toDate());
+                    }
+                } catch (err) {
+                    console.error('Error fetching PO order date:', err);
+                }
+            }
+            setPoOrderDates(orderDatesMap);
         } catch (e) {
             toast({
                 title: 'Error loading SKU details',
@@ -794,6 +814,7 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions, a
                                     <TableHead>Status</TableHead>
                                     <TableHead>Printed</TableHead>
                                     <TableHead>Shipment Date</TableHead>
+                                    <TableHead>Perkiraan Tiba</TableHead>
                                     <TableHead>Shipping Info</TableHead>
                                     <TableHead className='text-right'>Actions</TableHead>
                                 </TableRow>
@@ -801,13 +822,13 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions, a
                             <TableBody>
                                 {loadingSkuDetails ? (
                                     <TableRow>
-                                        <TableCell colSpan={10} className="h-24 text-center">
+                                        <TableCell colSpan={11} className="h-24 text-center">
                                             <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
                                         </TableCell>
                                     </TableRow>
                                 ) : skuShipments.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={10} className="h-24 text-center">
+                                        <TableCell colSpan={11} className="h-24 text-center">
                                             No shipments found for this SKU yet.
                                         </TableCell>
                                     </TableRow>
@@ -858,6 +879,15 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions, a
                                                         </Badge>
                                                     </TableCell>
                                                     <TableCell>{shipment.createdAt.toDate().toLocaleDateString()}</TableCell>
+                                                    <TableCell>
+                                                        {poOrderDates.get(shipment.purchaseOrderId) ? (
+                                                            <span className="text-sm font-medium">
+                                                                {format(addMonths(poOrderDates.get(shipment.purchaseOrderId)!, 1), 'dd MMM yyyy')}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-sm text-muted-foreground">-</span>
+                                                        )}
+                                                    </TableCell>
                                                     <TableCell>
                                                         {shippingInfo ? (
                                                             <div className="text-sm">

@@ -32,6 +32,7 @@ import {
   ChevronRight,
   Image as ImageIcon,
   ExternalLink,
+  FileText,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import type { PurchaseOrder, POReceive, POReceiveItem } from '@/lib/types';
@@ -58,6 +59,8 @@ import {
   deleteDraft,
 } from '@/lib/services/draftInboundService';
 import type { Unit, DraftInboundShipment } from '@/lib/types';
+import { usePDF } from 'react-to-pdf';
+import { PODocumentPrint } from '@/components/PODocumentPrint';
 
 export default function POReceivePage() {
   const { toast } = useToast();
@@ -82,6 +85,16 @@ export default function POReceivePage() {
   // Pagination
   const [currentPage, setCurrentPage] = React.useState(1);
   const itemsPerPage = 50;
+
+  // PDF Generation
+  const { toPDF, targetRef } = usePDF({
+    filename: `PO-${po?.poNumber || 'document'}-${format(new Date(), 'yyyy-MM-dd_HH-mm-ss')}.pdf`,
+    page: {
+      margin: 10,
+      format: 'a4',
+      orientation: 'portrait'
+    }
+  });
 
   const storeId = user?.email === 'superadmin@caliloops.com' ? selectedStoreId : user?.storeId;
 
@@ -353,6 +366,40 @@ export default function POReceivePage() {
 
   const totalPages = Math.ceil(items.length / itemsPerPage);
 
+  // Helper function to convert Google Drive URLs to direct image URLs
+  const convertGoogleDriveUrl = (url: string): string => {
+    if (!url) return url;
+
+    // Check if it's a Google Drive URL
+    const match = url.match(/\/file\/d\/([^/]+)\//);
+    if (match && match[1]) {
+      return `https://drive.google.com/uc?export=view&id=${match[1]}`;
+    }
+
+    return url;
+  };
+
+  // Handle PDF generation with image loading
+  const [isGeneratingPdf, setIsGeneratingPdf] = React.useState(false);
+
+  const handlePrintPdf = async () => {
+    setIsGeneratingPdf(true);
+    try {
+      // Wait a bit for images to load
+      await new Promise(resolve => setTimeout(resolve, 500));
+      await toPDF();
+    } catch (error) {
+      console.error('PDF generation error:', error);
+      toast({
+        title: 'Failed to generate PDF',
+        description: 'Please try again',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
   // Show store selection prompt for superadmin
   if (user?.email === 'superadmin@caliloops.com' && !selectedStoreId) {
     return (
@@ -394,6 +441,23 @@ export default function POReceivePage() {
           <p className="text-muted-foreground">Receive and inspect items for PO: {po.poNumber}</p>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={handlePrintPdf}
+            disabled={loading || isGeneratingPdf}
+          >
+            {isGeneratingPdf ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Generating PDF...
+              </>
+            ) : (
+              <>
+                <FileText className="mr-2 h-4 w-4" />
+                Print PO Document
+              </>
+            )}
+          </Button>
           {!isCompleted && (
             <>
               <Button
@@ -560,7 +624,7 @@ export default function POReceivePage() {
                           {item.imageUrl ? (
                             <div className="relative w-16 h-16">
                               <Image
-                                src={item.imageUrl}
+                                src={convertGoogleDriveUrl(item.imageUrl)}
                                 alt={item.itemName}
                                 fill
                                 className="object-cover rounded"
@@ -745,6 +809,13 @@ export default function POReceivePage() {
         item={selectedItem}
         onSave={handleSaveDamaged}
       />
+
+      {/* Hidden Print Document */}
+      <div style={{ position: 'absolute', left: '-9999px', top: '-9999px' }}>
+        {po && items.length > 0 && (
+          <PODocumentPrint ref={targetRef} po={po} items={items} />
+        )}
+      </div>
     </div>
   );
 }
