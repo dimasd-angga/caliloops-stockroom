@@ -38,6 +38,7 @@ import { format } from 'date-fns';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Image from 'next/image';
 import { AlertTriangle } from 'lucide-react';
+import { ImagePreviewDialog } from '@/components/ImagePreviewDialog';
 
 export default function PORecapPage() {
   const { toast } = useToast();
@@ -215,14 +216,20 @@ export default function PORecapPage() {
                     <TableRow key={item.id}>
                       <TableCell>
                         {item.imageUrl ? (
-                          <div className="relative w-16 h-16">
-                            <Image
-                              src={convertGoogleDriveUrl(item.imageUrl)}
-                              alt={item.itemName}
-                              fill
-                              className="object-cover rounded"
-                            />
-                          </div>
+                          <ImagePreviewDialog
+                            imageUrl={convertGoogleDriveUrl(item.imageUrl)}
+                            alt={item.itemName}
+                            trigger={
+                              <div className="relative w-16 h-16">
+                                <Image
+                                  src={convertGoogleDriveUrl(item.imageUrl)}
+                                  alt={item.itemName}
+                                  fill
+                                  className="object-cover rounded"
+                                />
+                              </div>
+                            }
+                          />
                         ) : (
                           <div className="w-16 h-16 bg-gray-100 rounded flex items-center justify-center">
                             <ImageIcon className="h-6 w-6 text-gray-400" />
