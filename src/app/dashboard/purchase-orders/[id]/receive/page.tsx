@@ -35,8 +35,9 @@ import {
   FileText,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import type { PurchaseOrder, POReceive, POReceiveItem } from '@/lib/types';
+import type { PurchaseOrder, POReceive, POReceiveItem, Supplier } from '@/lib/types';
 import { getPurchaseOrderWithDetails } from '@/lib/services/purchaseOrderService';
+import { getSupplierById } from '@/lib/services/supplierService';
 import {
   initializePOReceive,
   getPOReceiveByPOId,
@@ -73,6 +74,7 @@ export default function POReceivePage() {
   const [po, setPo] = React.useState<PurchaseOrder | null>(null);
   const [poReceive, setPoReceive] = React.useState<POReceive | null>(null);
   const [items, setItems] = React.useState<POReceiveItem[]>([]);
+  const [supplier, setSupplier] = React.useState<Supplier | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [completing, setCompleting] = React.useState(false);
@@ -121,6 +123,16 @@ export default function POReceivePage() {
         const fetchedPO = await getPurchaseOrderWithDetails(poId);
         console.log('PO fetched:', fetchedPO);
         setPo(fetchedPO);
+
+        // Fetch supplier details
+        if (fetchedPO && fetchedPO.supplierId) {
+          try {
+            const fetchedSupplier = await getSupplierById(fetchedPO.supplierId);
+            setSupplier(fetchedSupplier);
+          } catch (error) {
+            console.error('Error fetching supplier:', error);
+          }
+        }
 
         // Get or create PO Receive
         console.log('Getting PO Receive...');
@@ -386,8 +398,8 @@ export default function POReceivePage() {
   const handlePrintPdf = async () => {
     setIsGeneratingPdf(true);
     try {
-      // Wait a bit for images to load
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Wait longer for images to load (increased to 2 seconds)
+      await new Promise(resolve => setTimeout(resolve, 2000));
       await toPDF();
     } catch (error) {
       console.error('PDF generation error:', error);
@@ -820,7 +832,7 @@ export default function POReceivePage() {
       {/* Hidden Print Document */}
       <div style={{ position: 'absolute', left: '-9999px', top: '-9999px' }}>
         {po && items.length > 0 && (
-          <PODocumentPrint ref={targetRef} po={po} items={items} />
+          <PODocumentPrint ref={targetRef} po={po} items={items} supplier={supplier} />
         )}
       </div>
     </div>

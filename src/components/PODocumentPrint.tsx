@@ -1,14 +1,15 @@
 import React from 'react';
 import { format } from 'date-fns';
-import type { PurchaseOrder, POReceiveItem } from '@/lib/types';
+import type { PurchaseOrder, POReceiveItem, Supplier } from '@/lib/types';
 
 interface PODocumentPrintProps {
   po: PurchaseOrder;
   items: POReceiveItem[];
+  supplier?: Supplier | null;
 }
 
 export const PODocumentPrint = React.forwardRef<HTMLDivElement, PODocumentPrintProps>(
-  ({ po, items }, ref) => {
+  ({ po, items, supplier }, ref) => {
     // Helper function to convert Google Drive URLs to direct image URLs
     const convertGoogleDriveUrl = (url: string): string => {
       if (!url) return url;
@@ -60,7 +61,17 @@ export const PODocumentPrint = React.forwardRef<HTMLDivElement, PODocumentPrintP
             </div>
             <div style={{ gridColumn: 'span 2' }}>
               <p style={{ fontWeight: '600', margin: '0 0 4px 0' }}>Supplier:</p>
-              <p style={{ fontSize: '18px', margin: '0' }}>{po.supplierName}</p>
+              <p style={{ fontSize: '18px', margin: '0 0 8px 0' }}>{po.supplierName}</p>
+              {supplier?.description && (
+                <p style={{ fontSize: '14px', margin: '0 0 4px 0', color: '#4b5563' }}>
+                  Description: {supplier.description}
+                </p>
+              )}
+              {supplier?.chatSearchName && (
+                <p style={{ fontSize: '14px', margin: '0', color: '#4b5563' }}>
+                  Chat Search Name: {supplier.chatSearchName}
+                </p>
+              )}
             </div>
             {po.trackingNumber && po.trackingNumber.length > 0 && (
               <div style={{ gridColumn: 'span 2' }}>
