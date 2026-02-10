@@ -30,6 +30,7 @@ import { useToast } from '@/hooks/use-toast';
 import type { Sku, Permissions } from '@/lib/types';
 import { addSku, checkSkuExists } from '@/lib/services/skuService';
 import { useSkuImageUpload } from '@/hooks/useSkuImageUpload';
+import { getAllPOsForSku } from '@/lib/services/purchaseOrderItemService';
 import {
   PlusCircle,
   Loader2,
@@ -63,6 +64,7 @@ import { Progress } from '@/components/ui/progress';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
+import { id as idLocale } from 'date-fns/locale';
 import Image from 'next/image';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -126,7 +128,10 @@ export function SkuList({
 
   // Search state
   const [searchTerm, setSearchTerm] = React.useState('');
-  
+
+  // Perkiraan Tiba state
+  const [perkiraanTibaMap, setPerkiraanTibaMap] = React.useState<Map<string, Array<{ poNumber: string; totalQuantity: number; estimatedArrival: Date }>>>(new Map());
+
   const handleSearchDebounced = React.useCallback(
     debounce((term: string) => onSearch(term), 500),
     [onSearch]
@@ -136,6 +141,33 @@ export function SkuList({
     setSearchTerm(e.target.value);
     handleSearchDebounced(e.target.value);
   }
+
+  // Fetch perkiraan tiba for all visible SKUs
+  React.useEffect(() => {
+    const fetchPerkiraanTiba = async () => {
+      if (!skus.length || loading) return;
+
+      const storeIdToQuery = user?.email === 'superadmin@caliloops.com' ? selectedStoreId : user?.storeId || null;
+      if (!storeIdToQuery) return;
+
+      const newMap = new Map();
+
+      for (const sku of skus) {
+        try {
+          const poData = await getAllPOsForSku(sku.id, storeIdToQuery);
+          if (poData.length > 0) {
+            newMap.set(sku.id, poData);
+          }
+        } catch (error) {
+          console.error(`Error fetching POs for SKU ${sku.skuCode}:`, error);
+        }
+      }
+
+      setPerkiraanTibaMap(newMap);
+    };
+
+    fetchPerkiraanTiba();
+  }, [skus, loading, user, selectedStoreId]);
 
   const resetSkuForm = () => {
     setNewSkuName('');
@@ -641,7 +673,16 @@ export function SkuList({
                                                     </div>
                                                 )}
                                             </TableCell>
-                                            <TableCell className="font-medium whitespace-nowrap">{sku.skuName}</TableCell>
+                                            <TableCell className="font-medium">
+                                                <div className="space-y-1">
+                                                    <div>{sku.skuName}</div>
+                                                    {perkiraanTibaMap.get(sku.id)?.map((po, index) => (
+                                                        <div key={index} className="text-xs text-muted-foreground">
+                                                            {po.totalQuantity}PCS Perkiraan tiba {format(po.estimatedArrival, 'dd MMMM yyyy', { locale: idLocale })}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </TableCell>
                                             <TableCell className="whitespace-nowrap">{sku.skuCode}</TableCell>
                                             <TableCell>{sku.remainingPacks}</TableCell>
                                             <TableCell>{sku.remainingQuantity}</TableCell>

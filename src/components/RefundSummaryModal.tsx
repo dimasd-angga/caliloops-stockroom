@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/table';
 import { Loader2, Printer } from 'lucide-react';
 import type { Refund, POReceiveItem } from '@/lib/types';
-import { getPOReceiveItems } from '@/lib/services/poReceiveService';
+import { getPOReceiveItems, getPOReceiveByPOId } from '@/lib/services/poReceiveService';
 import { format } from 'date-fns';
 
 interface RefundSummaryModalProps {
@@ -38,8 +38,18 @@ export function RefundSummaryModal({ open, onOpenChange, refund }: RefundSummary
 
       setLoading(true);
       try {
-        // Fetch all PO Receive items for this PO
-        const allItems = await getPOReceiveItems(refund.poId);
+        // First, get the PO Receive record
+        const poReceive = await getPOReceiveByPOId(refund.poId);
+
+        if (!poReceive) {
+          console.error('PO Receive not found for poId:', refund.poId);
+          setItems([]);
+          setLoading(false);
+          return;
+        }
+
+        // Fetch all PO Receive items using the poReceiveId
+        const allItems = await getPOReceiveItems(poReceive.id);
 
         // Filter items with refund amounts (not received OR damaged)
         const refundItems = allItems.filter(
@@ -104,6 +114,10 @@ export function RefundSummaryModal({ open, onOpenChange, refund }: RefundSummary
                 <p className="font-semibold text-lg">{refund.poNumber}</p>
               </div>
               <div>
+                <p className="text-sm text-muted-foreground">订单编号 / Order Number</p>
+                <p className="font-semibold text-lg">{refund.orderNumber || '-'}</p>
+              </div>
+              <div>
                 <p className="text-sm text-muted-foreground">供应商 / Supplier</p>
                 <p className="font-semibold text-lg">{refund.supplierName}</p>
               </div>
@@ -113,7 +127,7 @@ export function RefundSummaryModal({ open, onOpenChange, refund }: RefundSummary
                   {format(refund.orderDate.toDate(), 'yyyy-MM-dd')}
                 </p>
               </div>
-              <div>
+              <div className="col-span-2">
                 <p className="text-sm text-muted-foreground">总退款 / Total Refund</p>
                 <p className="font-semibold text-xl text-red-600">
                   ¥{totals.totalRefund.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

@@ -206,3 +206,67 @@ export const getShippingPOsForSku = async (
 
   return results;
 };
+
+/**
+ * Get all PO information for a specific SKU with estimated arrival dates
+ * Returns all POs regardless of status
+ */
+export const getAllPOsForSku = async (
+  skuId: string,
+  storeId: string
+): Promise<Array<{ poNumber: string; totalQuantity: number; estimatedArrival: Date }>> => {
+  // First, find all PO items with this SKU
+  const itemsQuery = query(
+    poItemsCollection,
+    where('skuId', '==', skuId),
+    where('storeId', '==', storeId)
+  );
+  const itemsSnapshot = await getDocs(itemsQuery);
+
+  if (itemsSnapshot.empty) {
+    return [];
+  }
+
+  // Group by PO ID
+  const poDataMap = new Map<string, { poId: string; items: PurchaseOrderItem[] }>();
+
+  itemsSnapshot.docs.forEach(doc => {
+    const item = doc.data() as PurchaseOrderItem;
+    if (!poDataMap.has(item.poId)) {
+      poDataMap.set(item.poId, { poId: item.poId, items: [] });
+    }
+    poDataMap.get(item.poId)!.items.push(item);
+  });
+
+  // Fetch PO details for each unique PO
+  const posCollection = collection(firestore, 'purchaseOrders');
+  const results: Array<{ poNumber: string; totalQuantity: number; estimatedArrival: Date }> = [];
+
+  for (const [poId, data] of poDataMap.entries()) {
+    const poRef = doc(posCollection, poId);
+    const poDoc = await getDoc(poRef);
+
+    if (poDoc.exists()) {
+      const poData = { id: poDoc.id, ...poDoc.data() } as PurchaseOrder;
+
+      // Calculate total quantity for this SKU in this PO
+      const totalQuantity = data.items.reduce((sum, item) => sum + item.quantity, 0);
+
+      // Calculate estimated arrival: order date + 1 month
+      const orderDate = poData.orderDate.toDate();
+      const estimatedArrival = new Date(orderDate);
+      estimatedArrival.setMonth(estimatedArrival.getMonth() + 1);
+
+      results.push({
+        poNumber: poData.poNumber,
+        totalQuantity,
+        estimatedArrival
+      });
+    }
+  }
+
+  // Sort by estimated arrival date (earliest first)
+  results.sort((a, b) => a.estimatedArrival.getTime() - b.estimatedArrival.getTime());
+
+  return results;
+};

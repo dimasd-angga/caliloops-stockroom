@@ -44,7 +44,7 @@ export const PODocumentPrint = React.forwardRef<HTMLDivElement, PODocumentPrintP
             marginBottom: '16px',
             margin: '0 0 16px 0'
           }}>
-            Cetak Dokumen PO - Untuk penerimaan barang datang
+            Cetak Dokumen PO
           </h1>
           <div style={{
             display: 'grid',
@@ -54,6 +54,10 @@ export const PODocumentPrint = React.forwardRef<HTMLDivElement, PODocumentPrintP
             <div>
               <p style={{ fontWeight: '600', margin: '0 0 4px 0' }}>PO Number:</p>
               <p style={{ fontSize: '18px', margin: '0' }}>{po.poNumber}</p>
+            </div>
+            <div>
+              <p style={{ fontWeight: '600', margin: '0 0 4px 0' }}>Order Number:</p>
+              <p style={{ fontSize: '18px', margin: '0' }}>{po.orderNumber || '-'}</p>
             </div>
             <div>
               <p style={{ fontWeight: '600', margin: '0 0 4px 0' }}>Order Date:</p>
