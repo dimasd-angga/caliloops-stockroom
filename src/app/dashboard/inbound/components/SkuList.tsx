@@ -66,6 +66,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import Image from 'next/image';
+import Link from 'next/link';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Pagination, PaginationContent, PaginationItem, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
@@ -130,7 +131,8 @@ export function SkuList({
   const [searchTerm, setSearchTerm] = React.useState('');
 
   // Perkiraan Tiba state
-  const [perkiraanTibaMap, setPerkiraanTibaMap] = React.useState<Map<string, Array<{ poNumber: string; totalQuantity: number; estimatedArrival: Date }>>>(new Map());
+  const [perkiraanTibaMap, setPerkiraanTibaMap] = React.useState<Map<string, Array<{ poId: string; poNumber: string; totalQuantity: number; estimatedArrival: Date }>>>(new Map());
+  const [loadingPerkiraanTiba, setLoadingPerkiraanTiba] = React.useState(false);
 
   const handleSearchDebounced = React.useCallback(
     debounce((term: string) => onSearch(term), 500),
@@ -150,6 +152,7 @@ export function SkuList({
       const storeIdToQuery = user?.email === 'superadmin@caliloops.com' ? selectedStoreId : user?.storeId || null;
       if (!storeIdToQuery) return;
 
+      setLoadingPerkiraanTiba(true);
       const newMap = new Map();
 
       for (const sku of skus) {
@@ -164,6 +167,7 @@ export function SkuList({
       }
 
       setPerkiraanTibaMap(newMap);
+      setLoadingPerkiraanTiba(false);
     };
 
     fetchPerkiraanTiba();
@@ -676,11 +680,24 @@ export function SkuList({
                                             <TableCell className="font-medium">
                                                 <div className="space-y-1">
                                                     <div>{sku.skuName}</div>
-                                                    {perkiraanTibaMap.get(sku.id)?.map((po, index) => (
-                                                        <div key={index} className="text-xs text-muted-foreground">
-                                                            {po.totalQuantity}PCS Perkiraan tiba {format(po.estimatedArrival, 'dd MMMM yyyy', { locale: idLocale })}
+                                                    {loadingPerkiraanTiba ? (
+                                                        <div className="text-xs text-muted-foreground italic">
+                                                            Loading...
                                                         </div>
-                                                    ))}
+                                                    ) : (
+                                                        perkiraanTibaMap.get(sku.id)?.map((po, index) => (
+                                                            <div key={index} className="text-xs text-muted-foreground font-mono">
+                                                                {po.totalQuantity} PCS | <Link
+                                                                    href={`/dashboard/purchase-orders/${po.poId}`}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="text-blue-600 hover:text-blue-800 hover:underline"
+                                                                >
+                                                                    {po.poNumber}
+                                                                </Link> | {format(po.estimatedArrival, 'dd MMM yyyy')}
+                                                            </div>
+                                                        ))
+                                                    )}
                                                 </div>
                                             </TableCell>
                                             <TableCell className="whitespace-nowrap">{sku.skuCode}</TableCell>

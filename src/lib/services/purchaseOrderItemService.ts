@@ -214,7 +214,7 @@ export const getShippingPOsForSku = async (
 export const getAllPOsForSku = async (
   skuId: string,
   storeId: string
-): Promise<Array<{ poNumber: string; totalQuantity: number; estimatedArrival: Date }>> => {
+): Promise<Array<{ poId: string; poNumber: string; totalQuantity: number; estimatedArrival: Date }>> => {
   // First, find all PO items with this SKU
   const itemsQuery = query(
     poItemsCollection,
@@ -240,7 +240,7 @@ export const getAllPOsForSku = async (
 
   // Fetch PO details for each unique PO
   const posCollection = collection(firestore, 'purchaseOrders');
-  const results: Array<{ poNumber: string; totalQuantity: number; estimatedArrival: Date }> = [];
+  const results: Array<{ poId: string; poNumber: string; totalQuantity: number; estimatedArrival: Date }> = [];
 
   for (const [poId, data] of poDataMap.entries()) {
     const poRef = doc(posCollection, poId);
@@ -258,6 +258,7 @@ export const getAllPOsForSku = async (
       estimatedArrival.setMonth(estimatedArrival.getMonth() + 1);
 
       results.push({
+        poId: poData.id,
         poNumber: poData.poNumber,
         totalQuantity,
         estimatedArrival
