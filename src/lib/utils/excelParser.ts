@@ -165,5 +165,19 @@ export const downloadPOItemsTemplate = () => {
     { wch: 12 }, // 金额
   ];
 
+  // Format number columns as TEXT to accept Chinese decimal format (using dots)
+  // This prevents Excel from auto-formatting with commas
+  const numberColumns = ['E', 'F', 'G', 'H']; // 数量, 单价, 优惠, 金额
+  numberColumns.forEach(col => {
+    for (let row = 2; row <= 1000; row++) { // Format rows 2-1000 as text
+      const cellAddress = `${col}${row}`;
+      if (!worksheet[cellAddress]) {
+        worksheet[cellAddress] = { t: 's', v: '' }; // Create empty text cell
+      } else {
+        worksheet[cellAddress].z = '@'; // Set number format to text
+      }
+    }
+  });
+
   xlsx.writeFile(workbook, 'PO_Items_Template.xlsx');
 };

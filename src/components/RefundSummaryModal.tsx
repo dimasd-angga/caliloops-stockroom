@@ -17,7 +17,8 @@ import {
   TableRow,
   TableFooter,
 } from '@/components/ui/table';
-import { Loader2, Printer } from 'lucide-react';
+import { Loader2, Printer, Image as ImageIcon } from 'lucide-react';
+import Image from 'next/image';
 import type { Refund, POReceiveItem } from '@/lib/types';
 import { getPOReceiveItems, getPOReceiveByPOId } from '@/lib/services/poReceiveService';
 import { format } from 'date-fns';
@@ -31,6 +32,7 @@ interface RefundSummaryModalProps {
 export function RefundSummaryModal({ open, onOpenChange, refund }: RefundSummaryModalProps) {
   const [items, setItems] = React.useState<POReceiveItem[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [previewImage, setPreviewImage] = React.useState<{ url: string; name: string } | null>(null);
 
   React.useEffect(() => {
     const fetchItems = async () => {
@@ -92,6 +94,19 @@ export function RefundSummaryModal({ open, onOpenChange, refund }: RefundSummary
     window.print();
   };
 
+  // Helper function to convert Google Drive URLs to direct image URLs
+  const convertGoogleDriveUrl = (url: string): string => {
+    if (!url) return url;
+
+    // Check if it's a Google Drive URL
+    const match = url.match(/\/file\/d\/([^/]+)\//);
+    if (match && match[1]) {
+      return `https://drive.google.com/uc?export=view&id=${match[1]}`;
+    }
+
+    return url;
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto">
@@ -141,6 +156,7 @@ export function RefundSummaryModal({ open, onOpenChange, refund }: RefundSummary
                 <TableHeader>
                   <TableRow className="bg-gray-100">
                     <TableHead className="text-center">序号<br /><span className="text-xs font-normal">No.</span></TableHead>
+                    <TableHead className="text-center">图片<br /><span className="text-xs font-normal">Image</span></TableHead>
                     <TableHead className="text-center">货号<br /><span className="text-xs font-normal">Item Code</span></TableHead>
                     <TableHead>货品名称<br /><span className="text-xs font-normal">Item Name</span></TableHead>
                     <TableHead className="text-center">规格<br /><span className="text-xs font-normal">Spec</span></TableHead>
@@ -156,7 +172,7 @@ export function RefundSummaryModal({ open, onOpenChange, refund }: RefundSummary
                 <TableBody>
                   {items.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={11} className="text-center text-muted-foreground h-32">
+                      <TableCell colSpan={12} className="text-center text-muted-foreground h-32">
                         No items with refund amounts
                       </TableCell>
                     </TableRow>
@@ -164,6 +180,26 @@ export function RefundSummaryModal({ open, onOpenChange, refund }: RefundSummary
                     items.map((item) => (
                       <TableRow key={item.id}>
                         <TableCell className="text-center">{item.serialNumber}</TableCell>
+                        <TableCell className="text-center">
+                          {item.imageUrl ? (
+                            <div
+                              className="w-16 h-16 relative cursor-pointer hover:opacity-80 transition-opacity mx-auto"
+                              onClick={() => setPreviewImage({ url: item.imageUrl!, name: item.itemName })}
+                            >
+                              <Image
+                                src={convertGoogleDriveUrl(item.imageUrl)}
+                                alt={item.itemName}
+                                fill
+                                className="rounded-md object-cover"
+                                sizes="64px"
+                              />
+                            </div>
+                          ) : (
+                            <div className="w-16 h-16 bg-gray-100 rounded-md flex items-center justify-center mx-auto">
+                              <ImageIcon className="h-6 w-6 text-gray-400" />
+                            </div>
+                          )}
+                        </TableCell>
                         <TableCell className="text-center font-mono text-sm">{item.itemCode}</TableCell>
                         <TableCell>{item.itemName}</TableCell>
                         <TableCell className="text-center text-sm">{item.specification}</TableCell>
@@ -214,7 +250,7 @@ export function RefundSummaryModal({ open, onOpenChange, refund }: RefundSummary
                 </TableBody>
                 <TableFooter>
                   <TableRow className="bg-gray-100">
-                    <TableCell colSpan={6} className="text-right font-bold text-lg">
+                    <TableCell colSpan={7} className="text-right font-bold text-lg">
                       总计 / Total:
                     </TableCell>
                     <TableCell className="text-center font-bold">
@@ -249,6 +285,26 @@ export function RefundSummaryModal({ open, onOpenChange, refund }: RefundSummary
             </div>
           </div>
         )}
+
+        {/* Image Preview Dialog */}
+        <Dialog open={!!previewImage} onOpenChange={() => setPreviewImage(null)}>
+          <DialogContent className="max-w-4xl">
+            <DialogHeader>
+              <DialogTitle>{previewImage?.name || 'Image Preview'}</DialogTitle>
+            </DialogHeader>
+            {previewImage && (
+              <div className="relative w-full" style={{ aspectRatio: '1' }}>
+                <Image
+                  src={convertGoogleDriveUrl(previewImage.url)}
+                  alt={previewImage.name}
+                  fill
+                  className="rounded-md object-contain"
+                  sizes="(max-width: 768px) 100vw, 50vw"
+                />
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   );

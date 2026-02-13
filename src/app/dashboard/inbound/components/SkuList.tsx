@@ -30,7 +30,7 @@ import { useToast } from '@/hooks/use-toast';
 import type { Sku, Permissions } from '@/lib/types';
 import { addSku, checkSkuExists } from '@/lib/services/skuService';
 import { useSkuImageUpload } from '@/hooks/useSkuImageUpload';
-import { getAllPOsForSku } from '@/lib/services/purchaseOrderItemService';
+import { getAllPOsForSku, getSkusInShipping } from '@/lib/services/purchaseOrderItemService';
 import {
   PlusCircle,
   Loader2,
@@ -39,6 +39,7 @@ import {
   AlertTriangle,
   Download,
   FileDown,
+  FileSpreadsheet,
   ChevronDown,
   Calendar as CalendarIcon,
   Search,
@@ -126,6 +127,9 @@ export function SkuList({
   // Export Modal State
   const [isExportModalOpen, setIsExportModalOpen] = React.useState(false);
   const [exportDateRange, setExportDateRange] = React.useState<DateRange | undefined>();
+
+  // Export SKUs in Shipping State
+  const [isExportingSkus, setIsExportingSkus] = React.useState(false);
 
   // Search state
   const [searchTerm, setSearchTerm] = React.useState('');
@@ -390,7 +394,71 @@ export function SkuList({
 
   const handleExportData = () => {
     toast({ title: "Export All SKUs is not supported with pagination yet.", variant: "destructive" });
-  }
+  };
+
+  const handleExportSkusInShipping = async () => {
+    const storeIdToUse = user?.email === 'superadmin@caliloops.com' ? selectedStoreId : user?.storeId;
+
+    if (!storeIdToUse) {
+      toast({ title: 'Please select a store', variant: 'destructive' });
+      return;
+    }
+
+    setIsExportingSkus(true);
+
+    try {
+      // Get SKUs in shipping data
+      const skuData = await getSkusInShipping(storeIdToUse);
+
+      if (skuData.length === 0) {
+        toast({
+          title: 'No SKUs in shipping',
+          description: 'There are no SKUs in POs with shipping status.',
+          variant: 'default'
+        });
+        return;
+      }
+
+      // Call API to export to Google Sheets
+      const response = await fetch('/api/export-skus-in-shipping', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          skuData,
+          sheetName: 'SKUs in Shipping',
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast({
+          title: 'Export Successful',
+          description: `Exported ${skuData.length} SKUs to Google Sheets`,
+        });
+        if (result.sheetUrl) {
+          window.open(result.sheetUrl, '_blank');
+        }
+      } else {
+        toast({
+          title: 'Export Failed',
+          description: result.message,
+          variant: 'destructive',
+        });
+      }
+    } catch (error: any) {
+      console.error('Export error:', error);
+      toast({
+        title: 'Export Failed',
+        description: error.message || 'An error occurred while exporting',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsExportingSkus(false);
+    }
+  };
 
   const canPerformActions = user?.email === 'superadmin@caliloops.com' ? !!selectedStoreId : !!user?.storeId;
 
@@ -436,6 +504,10 @@ export function SkuList({
                                             Export SKUs to CSV
                                         </DropdownMenuItem>
                                     </DialogTrigger>
+                                    <DropdownMenuItem onSelect={handleExportSkusInShipping} disabled={isExportingSkus}>
+                                        <FileSpreadsheet className="mr-2 h-4 w-4" />
+                                        {isExportingSkus ? 'Exporting...' : 'Export SKUs in Shipping'}
+                                    </DropdownMenuItem>
                                     <DropdownMenuItem onSelect={handleDownloadTemplate}>
                                         <Download className="mr-2 h-4 w-4" />
                                         Download CSV Template

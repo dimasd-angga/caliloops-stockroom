@@ -57,6 +57,94 @@ export const getPOItems = async (poId: string): Promise<PurchaseOrderItem[]> => 
   return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as PurchaseOrderItem));
 };
 
+export const getPOItemsCount = async (poId: string): Promise<number> => {
+  const q = query(
+    poItemsCollection,
+    where('poId', '==', poId)
+  );
+  const snapshot = await getDocs(q);
+  return snapshot.size;
+};
+
+/**
+ * Get aggregated SKU data from all PO items in shipping status
+ * Returns data grouped by SKU with total quantities and PO numbers
+ */
+export const getSkusInShipping = async (storeId: string): Promise<{
+  skuCode: string;
+  skuName: string;
+  totalPack: number;
+  totalQty: number;
+  totalPcs: number;
+  poNumbers: string;
+}[]> => {
+  // First, get all POs with IN SHIPPING status
+  const posCollection = collection(firestore, 'purchaseOrders');
+  const posQuery = query(
+    posCollection,
+    where('storeId', '==', storeId),
+    where('status', 'in', ['IN SHIPPING', 'IN SHIPPING (PARTIAL)'])
+  );
+  const posSnapshot = await getDocs(posQuery);
+
+  if (posSnapshot.empty) {
+    return [];
+  }
+
+  const posInShipping = posSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PurchaseOrder));
+  const poIds = posInShipping.map(po => po.id);
+
+  // Get all items for these POs
+  const itemsQuery = query(
+    poItemsCollection,
+    where('storeId', '==', storeId),
+    where('poId', 'in', poIds)
+  );
+  const itemsSnapshot = await getDocs(itemsQuery);
+
+  if (itemsSnapshot.empty) {
+    return [];
+  }
+
+  const items = itemsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PurchaseOrderItem));
+
+  // Group by SKU and aggregate
+  const skuMap = new Map<string, {
+    skuName: string;
+    totalQty: number;
+    poSet: Set<string>;
+  }>();
+
+  items.forEach(item => {
+    if (!item.skuCode) return; // Skip items without SKU mapping
+
+    const existing = skuMap.get(item.skuCode);
+    if (existing) {
+      existing.totalQty += item.quantity;
+      existing.poSet.add(item.poNumber);
+    } else {
+      skuMap.set(item.skuCode, {
+        skuName: item.skuName || '',
+        totalQty: item.quantity,
+        poSet: new Set([item.poNumber]),
+      });
+    }
+  });
+
+  // Convert to array and format
+  const result = Array.from(skuMap.entries()).map(([skuCode, data]) => ({
+    skuCode,
+    skuName: data.skuName,
+    totalPack: data.poSet.size, // Number of unique POs
+    totalQty: data.totalQty,
+    totalPcs: data.totalQty, // Same as totalQty for now
+    poNumbers: Array.from(data.poSet).sort().join(', '),
+  }));
+
+  // Sort by SKU code
+  return result.sort((a, b) => a.skuCode.localeCompare(b.skuCode));
+};
+
 export const savePOItems = async (
   poId: string,
   poNumber: string,

@@ -136,6 +136,19 @@ export const getPOReceiveItems = async (poReceiveId: string): Promise<POReceiveI
 };
 
 /**
+ * Get count of items that have been received (hasReceivedInput = true) for a PO
+ */
+export const getReceivedItemsCount = async (poId: string): Promise<number> => {
+  const q = query(
+    poReceiveItemsCollection,
+    where('poId', '==', poId),
+    where('hasReceivedInput', '==', true)
+  );
+  const snapshot = await getDocs(q);
+  return snapshot.size;
+};
+
+/**
  * Update received quantity after inbound shipment is created
  * This is called from the inbound service after shipment is submitted
  */

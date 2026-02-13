@@ -159,7 +159,13 @@ export type PurchaseOrder = {
   trackingNumber: string[];
   shippingNote?: string;
 
-  // New quantity tracking fields
+  // Quantity tracking fields (new structure)
+  qtyReceived?: number;       // Total qty diterima dari PO ini
+  qtyNotReceived?: number;    // Total qty tidak diterima
+  qtyDamaged?: number;        // Total qty rusak
+  // Note: totalPcs = qtyReceived + qtyNotReceived + qtyDamaged
+
+  // Old quantity fields (deprecated, kept for backward compatibility)
   totalPcsOldReceived?: number;
   totalPcsNewReceived?: number;
   totalPcsRefunded?: number;

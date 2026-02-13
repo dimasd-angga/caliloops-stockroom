@@ -117,6 +117,18 @@ export const PODocumentPrint = React.forwardRef<HTMLDivElement, PODocumentPrintP
                 textAlign: 'right',
                 width: '80px'
               }}>Qty</th>
+              <th style={{
+                border: '1px solid black',
+                padding: '8px',
+                textAlign: 'right',
+                width: '100px'
+              }}>QTY Diterima</th>
+              <th style={{
+                border: '1px solid black',
+                padding: '8px',
+                textAlign: 'right',
+                width: '100px'
+              }}>QTY Rusak</th>
             </tr>
           </thead>
           <tbody>
@@ -184,6 +196,22 @@ export const PODocumentPrint = React.forwardRef<HTMLDivElement, PODocumentPrintP
                 }}>
                   {item.quantity}
                 </td>
+                <td style={{
+                  border: '1px solid black',
+                  padding: '8px',
+                  textAlign: 'right',
+                  backgroundColor: '#f9fafb'
+                }}>
+                  {/* Empty for manual input */}
+                </td>
+                <td style={{
+                  border: '1px solid black',
+                  padding: '8px',
+                  textAlign: 'right',
+                  backgroundColor: '#f9fafb'
+                }}>
+                  {/* Empty for manual input */}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -205,6 +233,22 @@ export const PODocumentPrint = React.forwardRef<HTMLDivElement, PODocumentPrintP
                 textAlign: 'right'
               }}>
                 {items.reduce((sum, item) => sum + item.quantity, 0)}
+              </td>
+              <td style={{
+                border: '1px solid black',
+                padding: '8px',
+                textAlign: 'right',
+                backgroundColor: '#f9fafb'
+              }}>
+                {/* Total QTY Diterima - for manual calculation */}
+              </td>
+              <td style={{
+                border: '1px solid black',
+                padding: '8px',
+                textAlign: 'right',
+                backgroundColor: '#f9fafb'
+              }}>
+                {/* Total QTY Rusak - for manual calculation */}
               </td>
             </tr>
           </tfoot>

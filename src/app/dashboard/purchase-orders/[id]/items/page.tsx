@@ -49,6 +49,7 @@ import {
   updatePOItem,
   deletePOItem,
   addPOItem,
+  bulkUpdatePOItems,
 } from '@/lib/services/purchaseOrderItemService';
 import { addInboundShipment } from '@/lib/services/inboundService';
 import { parsePOItemsExcel, downloadPOItemsTemplate } from '@/lib/utils/excelParser';
@@ -88,6 +89,7 @@ export default function PurchaseOrderItemsPage() {
 
   // Excel upload state
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const hasAutoSyncedRef = React.useRef(false);
   const [isUploadConfirmOpen, setIsUploadConfirmOpen] = React.useState(false);
   const [uploadedItems, setUploadedItems] = React.useState<any[]>([]);
   const [uploadAction, setUploadAction] = React.useState<'replace' | 'append'>('replace');
@@ -131,8 +133,56 @@ export default function PurchaseOrderItemsPage() {
   }, [poId, toast]);
 
   React.useEffect(() => {
+    // Reset auto-sync flag when PO changes
+    hasAutoSyncedRef.current = false;
     fetchItems();
   }, [fetchItems]);
+
+  // Auto-sync cost per pcs when items are loaded if needed
+  React.useEffect(() => {
+    const autoSyncCostPerPcs = async () => {
+      // Skip if already synced or still loading
+      if (hasAutoSyncedRef.current || !po || !items || items.length === 0 || loading) return;
+
+      const masterCostPerPcs = po.costPerPiece || 0;
+
+      // Check if master PO has cost per pcs but items don't
+      const itemsWithZeroCost = items.filter(item => item.costPerPcs === 0);
+
+      if (masterCostPerPcs > 0 && itemsWithZeroCost.length > 0) {
+        console.log(`[Auto-sync] Detected ${itemsWithZeroCost.length} items with 0 cost per pcs, syncing from master PO...`);
+
+        // Mark as synced to prevent re-run
+        hasAutoSyncedRef.current = true;
+
+        try {
+          const itemsToUpdate = itemsWithZeroCost.map((item) => ({
+            id: item.id,
+            data: {
+              costPerPcs: masterCostPerPcs,
+              modalBarang: item.hargaBarang + masterCostPerPcs,
+            },
+          }));
+
+          await bulkUpdatePOItems(itemsToUpdate);
+
+          // Refresh items to show updated values
+          await fetchItems();
+
+          toast({
+            title: 'Cost Per Pcs auto-synced!',
+            description: `Updated ${itemsWithZeroCost.length} items with cost per pcs from master PO`
+          });
+        } catch (error) {
+          console.error('Error auto-syncing cost per pcs:', error);
+          // Reset flag on error so user can try again
+          hasAutoSyncedRef.current = false;
+        }
+      }
+    };
+
+    autoSyncCostPerPcs();
+  }, [po, items, loading, fetchItems, toast]);
 
   // Calculate values
   const calculateHargaBarang = (unitPrice: number): number => {
@@ -359,7 +409,7 @@ export default function PurchaseOrderItemsPage() {
       amount: 0,
       hargaBarang: 0,
       costPerPcs: po.costPerPiece || 0,
-      modalBarang: 0,
+      modalBarang: calculateModalBarang(0), // Modal Barang = Harga Barang + Cost per Pcs
     };
 
     try {
@@ -386,6 +436,55 @@ export default function PurchaseOrderItemsPage() {
       toast({ title: 'Row deleted' });
     } catch (error) {
       toast({ title: 'Failed to delete row', variant: 'destructive' });
+    }
+  };
+
+  // Sync cost per pcs from master PO to all items
+  const handleSyncCostPerPcs = async () => {
+    if (!po) {
+      toast({ title: 'PO data not loaded', variant: 'destructive' });
+      return;
+    }
+
+    const costPerPcs = po.costPerPiece || 0;
+
+    if (costPerPcs === 0) {
+      toast({
+        title: 'Cost Per Pcs not set',
+        description: 'Please set Cost Per Pcs in the master PO first',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const itemsToUpdate = items.map((item) => ({
+        id: item.id,
+        data: {
+          costPerPcs: costPerPcs,
+          modalBarang: item.hargaBarang + costPerPcs,
+        },
+      }));
+
+      await bulkUpdatePOItems(itemsToUpdate);
+
+      // Refresh items to show updated values
+      await fetchItems();
+
+      // Reset auto-sync flag so it can run again if needed
+      hasAutoSyncedRef.current = false;
+
+      toast({
+        title: 'Cost Per Pcs synced successfully!',
+        description: `Updated ${items.length} items with cost per pcs: ${costPerPcs.toLocaleString('id-ID', { style: 'currency', currency: 'IDR' })}`
+      });
+    } catch (error) {
+      console.error('Error syncing cost per pcs:', error);
+      toast({ title: 'Failed to sync cost per pcs', variant: 'destructive' });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -607,6 +706,10 @@ export default function PurchaseOrderItemsPage() {
               <Button size="sm" variant="outline" onClick={fetchItems} disabled={loading}>
                 <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
                 Refresh
+              </Button>
+              <Button size="sm" variant="outline" onClick={handleSyncCostPerPcs} disabled={loading || items.length === 0}>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Sync Cost Per Pcs
               </Button>
               <Button size="sm" onClick={handleAddRow}>
                 <PlusCircle className="mr-2 h-4 w-4" />
