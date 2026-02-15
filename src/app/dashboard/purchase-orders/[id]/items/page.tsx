@@ -570,14 +570,18 @@ export default function PurchaseOrderItemsPage() {
       return { quantity: 0, amount: 0, modalBarang: 0 };
     }
     return filteredItems.reduce(
-      (acc, item) => ({
-        quantity: acc.quantity + item.quantity,
-        amount: acc.amount + item.amount, // Sum of "金额 (¥)" column directly
-        modalBarang: acc.modalBarang + item.modalBarang * item.quantity,
-      }),
+      (acc, item) => {
+        // Calculate modal barang real-time using current master PO cost per pcs
+        const modalBarangRealtime = item.hargaBarang + (po?.costPerPiece || 0);
+        return {
+          quantity: acc.quantity + item.quantity,
+          amount: acc.amount + item.amount, // Sum of "金额 (¥)" column directly
+          modalBarang: acc.modalBarang + (modalBarangRealtime * item.quantity),
+        };
+      },
       { quantity: 0, amount: 0, modalBarang: 0 }
     );
-  }, [filteredItems, items.length]);
+  }, [filteredItems, items.length, po?.costPerPiece]);
 
   if (!po) {
     return (
@@ -852,13 +856,13 @@ export default function PurchaseOrderItemsPage() {
                         )}
                       </TableCell>
                       <TableCell className="font-mono text-sm">
-                        {item.hargaBarang.toLocaleString('id-ID')}
+                        {item.hargaBarang.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </TableCell>
                       <TableCell className="font-mono text-sm">
-                        {item.costPerPcs.toLocaleString('id-ID')}
+                        {(po?.costPerPiece || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </TableCell>
                       <TableCell className="font-mono text-sm font-semibold">
-                        {item.modalBarang.toLocaleString('id-ID')}
+                        {(item.hargaBarang + (po?.costPerPiece || 0)).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </TableCell>
                       <TableCell>
                         <Button

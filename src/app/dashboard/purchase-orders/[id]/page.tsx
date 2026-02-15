@@ -150,14 +150,9 @@ export default function PurchaseOrderFormPage() {
         let updatedPo = { ...prevPo, [field]: value };
 
         // Handle numeric fields
-        if (['totalRmb', 'exchangeRate', 'qtyReceived', 'qtyNotReceived', 'qtyDamaged', 'totalPembelianIdr', 'packageCount'].includes(field as string)) {
+        if (['totalPcs', 'totalRmb', 'exchangeRate', 'qtyReceived', 'qtyNotReceived', 'qtyDamaged', 'totalPembelianIdr', 'packageCount'].includes(field as string)) {
             const numValue = Number(value);
             updatedPo[field as 'totalRmb'] = isNaN(numValue) ? 0 : numValue;
-        }
-
-        // Auto-calculate totalPcs when receiving quantities change
-        if (['qtyReceived', 'qtyNotReceived', 'qtyDamaged'].includes(field as string)) {
-            updatedPo.totalPcs = (updatedPo.qtyReceived || 0) + (updatedPo.qtyNotReceived || 0) + (updatedPo.qtyDamaged || 0);
         }
 
         return updatedPo;
@@ -319,12 +314,7 @@ export default function PurchaseOrderFormPage() {
             <div className="space-y-4">
                 <h3 className="text-lg font-medium">Financial Details</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="grid gap-2">
-                        <Label htmlFor="totalPcs">Total Pcs</Label>
-                        <div className='h-10 flex items-center px-3 text-sm font-semibold border rounded-md bg-muted/50'>
-                            {((po.qtyReceived || 0) + (po.qtyNotReceived || 0) + (po.qtyDamaged || 0)) || 0}
-                        </div>
-                    </div>
+                    <div className="grid gap-2"><Label htmlFor="totalPcs">Total Pcs</Label><NumericInput id="totalPcs" value={po.totalPcs || 0} onValueChange={(value) => handleInputChange('totalPcs', value)} /></div>
                     <div className="grid gap-2"><Label htmlFor="totalRmb">Total RMB</Label><NumericInput id="totalRmb" value={po.totalRmb || 0} onValueChange={(value) => handleInputChange('totalRmb', value)} /></div>
                     <div className="grid gap-2"><Label htmlFor="exchangeRate">Kurs</Label><NumericInput id="exchangeRate" value={po.exchangeRate || 0} onValueChange={(value) => handleInputChange('exchangeRate', value)} /></div>
                 </div>

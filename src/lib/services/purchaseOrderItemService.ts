@@ -15,7 +15,8 @@ import {
   deleteDoc,
   getDocs,
 } from 'firebase/firestore';
-import type { PurchaseOrderItem, PurchaseOrder } from '../types';
+import type { PurchaseOrderItem, PurchaseOrder, POReceive, POReceiveItem } from '../types';
+import { getPOReceiveByPOId, getPOReceiveItems } from './poReceiveService';
 
 const poItemsCollection = collection(firestore, 'purchaseOrderItems');
 
@@ -69,6 +70,7 @@ export const getPOItemsCount = async (poId: string): Promise<number> => {
 /**
  * Get aggregated SKU data from all PO items in shipping status
  * Returns data grouped by SKU with total quantities and PO numbers
+ * Updated to account for PO Receive progress (only counts qty not yet received)
  */
 export const getSkusInShipping = async (storeId: string): Promise<{
   skuCode: string;
@@ -92,44 +94,83 @@ export const getSkusInShipping = async (storeId: string): Promise<{
   }
 
   const posInShipping = posSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PurchaseOrder));
-  const poIds = posInShipping.map(po => po.id);
 
-  // Get all items for these POs
-  const itemsQuery = query(
-    poItemsCollection,
-    where('storeId', '==', storeId),
-    where('poId', 'in', poIds)
-  );
-  const itemsSnapshot = await getDocs(itemsQuery);
-
-  if (itemsSnapshot.empty) {
-    return [];
-  }
-
-  const items = itemsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PurchaseOrderItem));
-
-  // Group by SKU and aggregate
+  // Group by SKU and aggregate - now considering PO Receive status
   const skuMap = new Map<string, {
     skuName: string;
     totalQty: number;
     poSet: Set<string>;
   }>();
 
-  items.forEach(item => {
-    if (!item.skuCode) return; // Skip items without SKU mapping
+  // Process each PO and account for receive status
+  for (const po of posInShipping) {
+    // Skip if PO status is DONE or RECEIVED
+    if (po.status === 'DONE' || po.status === 'RECEIVED') {
+      continue;
+    }
 
-    const existing = skuMap.get(item.skuCode);
-    if (existing) {
-      existing.totalQty += item.quantity;
-      existing.poSet.add(item.poNumber);
+    // Check if PO Receive exists
+    const poReceive = await getPOReceiveByPOId(po.id);
+
+    // Skip if PO Receive is COMPLETED
+    if (poReceive && poReceive.status === 'COMPLETED') {
+      continue;
+    }
+
+    // Get items for this PO
+    const itemsQuery = query(
+      poItemsCollection,
+      where('storeId', '==', storeId),
+      where('poId', '==', po.id)
+    );
+    const itemsSnapshot = await getDocs(itemsQuery);
+
+    if (itemsSnapshot.empty) {
+      continue;
+    }
+
+    const items = itemsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PurchaseOrderItem));
+
+    // If PO Receive is IN_PROGRESS, only count qtyNotReceived
+    if (poReceive && poReceive.status === 'IN_PROGRESS') {
+      const receiveItems = await getPOReceiveItems(poReceive.id);
+
+      // Process each receive item (which includes qty not received info)
+      receiveItems.forEach(receiveItem => {
+        if (!receiveItem.skuCode) return; // Skip items without SKU mapping
+        if (receiveItem.qtyNotReceived === 0) return; // Skip if all received
+
+        const existing = skuMap.get(receiveItem.skuCode);
+        if (existing) {
+          existing.totalQty += receiveItem.qtyNotReceived;
+          existing.poSet.add(po.poNumber);
+        } else {
+          skuMap.set(receiveItem.skuCode, {
+            skuName: receiveItem.skuName || '',
+            totalQty: receiveItem.qtyNotReceived,
+            poSet: new Set([po.poNumber]),
+          });
+        }
+      });
     } else {
-      skuMap.set(item.skuCode, {
-        skuName: item.skuName || '',
-        totalQty: item.quantity,
-        poSet: new Set([item.poNumber]),
+      // No PO Receive or not started yet - count full original quantity
+      items.forEach(item => {
+        if (!item.skuCode) return; // Skip items without SKU mapping
+
+        const existing = skuMap.get(item.skuCode);
+        if (existing) {
+          existing.totalQty += item.quantity;
+          existing.poSet.add(po.poNumber);
+        } else {
+          skuMap.set(item.skuCode, {
+            skuName: item.skuName || '',
+            totalQty: item.quantity,
+            poSet: new Set([po.poNumber]),
+          });
+        }
       });
     }
-  });
+  }
 
   // Convert to array and format
   const result = Array.from(skuMap.entries()).map(([skuCode, data]) => ({
@@ -278,16 +319,55 @@ export const getShippingPOsForSku = async (
     if (poDoc.exists()) {
       const poData = { id: poDoc.id, ...poDoc.data() } as PurchaseOrder;
 
-      // Only include if status is IN SHIPPING
+      // Check if there's a PO Receive record for this PO first
+      const poReceive = await getPOReceiveByPOId(poId);
+
+      // IMPORTANT: Skip if PO Receive is COMPLETED (qty settled via refund, no more pending qty)
+      if (poReceive && poReceive.status === 'COMPLETED') {
+        continue; // Skip this PO regardless of PO status
+      }
+
+      // IMPORTANT: Skip if PO status is DONE (receiving completed, nothing pending)
+      if (poData.status === 'DONE') {
+        continue; // Skip this PO
+      }
+
+      // IMPORTANT: Skip if PO status is RECEIVED (fully received)
+      if (poData.status === 'RECEIVED') {
+        continue; // Skip this PO
+      }
+
+      // Only include if status is IN SHIPPING (items still in transit)
       if (poData.status === 'IN SHIPPING' || poData.status === 'IN SHIPPING (PARTIAL)') {
-        // Calculate total quantity for this SKU in this PO
-        const itemsForThisPO = itemsSnapshot.docs
-          .filter(doc => doc.data().poId === poId)
-          .map(doc => doc.data() as PurchaseOrderItem);
+        let quantityToShow = 0;
 
-        const totalQuantity = itemsForThisPO.reduce((sum, item) => sum + item.quantity, 0);
+        if (poReceive && poReceive.status === 'IN_PROGRESS') {
+          // PO Receive IN_PROGRESS: Show only qty not received yet
+          const allReceiveItems = await getPOReceiveItems(poReceive.id);
 
-        results.push({ po: poData, totalQuantity });
+          // Filter receive items for this SKU
+          const receiveItemsForSku = allReceiveItems.filter(item => item.skuId === skuId);
+
+          // Calculate total qty not received for this SKU
+          quantityToShow = receiveItemsForSku.reduce((sum, item) => sum + item.qtyNotReceived, 0);
+
+          // If all items received (qtyNotReceived = 0), don't show this row
+          if (quantityToShow === 0) {
+            continue; // Skip this PO
+          }
+        } else if (!poReceive) {
+          // No PO Receive yet: Show original quantity from PO items (all qty still pending)
+          const itemsForThisPO = itemsSnapshot.docs
+            .filter(doc => doc.data().poId === poId)
+            .map(doc => doc.data() as PurchaseOrderItem);
+
+          quantityToShow = itemsForThisPO.reduce((sum, item) => sum + item.quantity, 0);
+        }
+
+        // Only add to results if there's quantity to show
+        if (quantityToShow > 0) {
+          results.push({ po: poData, totalQuantity: quantityToShow });
+        }
       }
     }
   }
@@ -337,8 +417,41 @@ export const getAllPOsForSku = async (
     if (poDoc.exists()) {
       const poData = { id: poDoc.id, ...poDoc.data() } as PurchaseOrder;
 
-      // Calculate total quantity for this SKU in this PO
-      const totalQuantity = data.items.reduce((sum, item) => sum + item.quantity, 0);
+      // Check if there's a PO Receive record for this PO
+      const poReceive = await getPOReceiveByPOId(poId);
+
+      // IMPORTANT: Skip if PO Receive is COMPLETED (qty settled via refund, no more pending qty)
+      if (poReceive && poReceive.status === 'COMPLETED') {
+        continue;
+      }
+
+      // IMPORTANT: Skip if PO status is DONE (receiving completed, nothing pending)
+      if (poData.status === 'DONE') {
+        continue;
+      }
+
+      // IMPORTANT: Skip if PO status is RECEIVED (fully received)
+      if (poData.status === 'RECEIVED') {
+        continue;
+      }
+
+      // Calculate quantity to show
+      let quantityToShow = 0;
+
+      if (poReceive && poReceive.status === 'IN_PROGRESS') {
+        // PO Receive IN_PROGRESS: Show only qty not received yet
+        const allReceiveItems = await getPOReceiveItems(poReceive.id);
+        const receiveItemsForSku = allReceiveItems.filter(item => item.skuId === skuId);
+        quantityToShow = receiveItemsForSku.reduce((sum, item) => sum + item.qtyNotReceived, 0);
+
+        // If all items received (qtyNotReceived = 0), don't show this row
+        if (quantityToShow === 0) {
+          continue;
+        }
+      } else {
+        // No PO Receive yet: Show original quantity from PO items (all qty still pending)
+        quantityToShow = data.items.reduce((sum, item) => sum + item.quantity, 0);
+      }
 
       // Calculate estimated arrival: order date + 1 month
       const orderDate = poData.orderDate.toDate();
@@ -348,7 +461,7 @@ export const getAllPOsForSku = async (
       results.push({
         poId: poData.id,
         poNumber: poData.poNumber,
-        totalQuantity,
+        totalQuantity: quantityToShow,
         estimatedArrival
       });
     }

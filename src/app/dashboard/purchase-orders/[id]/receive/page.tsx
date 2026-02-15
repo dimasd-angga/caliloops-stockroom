@@ -33,6 +33,7 @@ import {
   Image as ImageIcon,
   ExternalLink,
   FileText,
+  X,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import type { PurchaseOrder, POReceive, POReceiveItem, Supplier } from '@/lib/types';
@@ -45,6 +46,7 @@ import {
   updateDamagedQuantity,
   completePOReceive,
   savePOReceiveProgress,
+  markItemAsNotReceived,
 } from '@/lib/services/poReceiveService';
 import { UserContext } from '@/app/dashboard/layout';
 import { format } from 'date-fns';
@@ -105,23 +107,18 @@ export default function POReceivePage() {
   React.useEffect(() => {
     const initialize = async () => {
       if (!poId) {
-        console.log('No poId');
         return;
       }
 
       if (!storeId) {
-        console.log('No storeId yet, waiting for user to load...');
         return;
       }
 
-      console.log('Initializing PO Receive for poId:', poId, 'storeId:', storeId);
       setLoading(true);
 
       try {
         // Get PO details
-        console.log('Fetching PO details...');
         const fetchedPO = await getPurchaseOrderWithDetails(poId);
-        console.log('PO fetched:', fetchedPO);
         setPo(fetchedPO);
 
         // Fetch supplier details
@@ -135,13 +132,10 @@ export default function POReceivePage() {
         }
 
         // Get or create PO Receive
-        console.log('Getting PO Receive...');
         let receive = await getPOReceiveByPOId(poId);
-        console.log('Existing receive:', receive);
 
         if (!receive) {
           // Initialize new PO Receive
-          console.log('Creating new PO Receive...');
           const receiveId = await initializePOReceive(
             poId,
             fetchedPO.poNumber,
@@ -149,24 +143,18 @@ export default function POReceivePage() {
             fetchedPO.supplierId,
             fetchedPO.supplierName
           );
-          console.log('PO Receive created with ID:', receiveId);
 
           // Fetch the created receive record
           receive = await getPOReceiveByPOId(poId);
-          console.log('Fetched created receive:', receive);
         }
 
         if (receive) {
           setPoReceive(receive);
 
           // Fetch items
-          console.log('Fetching receive items...');
           const fetchedItems = await getPOReceiveItems(receive.id);
-          console.log('Items fetched:', fetchedItems.length);
           setItems(fetchedItems);
         }
-
-        console.log('Initialization complete');
       } catch (error: any) {
         console.error('Error initializing PO Receive:', error);
         toast({
@@ -281,7 +269,7 @@ export default function POReceivePage() {
       try {
         await deleteDraft(selectedItem.id);
       } catch (error) {
-        console.log('No draft to delete or error deleting draft:', error);
+        // Silently ignore draft deletion errors
       }
 
       await refreshItems();
@@ -335,6 +323,24 @@ export default function POReceivePage() {
     }
   };
 
+  // Handle Mark as Not Received
+  const handleMarkAsNotReceived = async (item: POReceiveItem) => {
+    try {
+      await markItemAsNotReceived(item.id);
+      await refreshItems();
+      toast({
+        title: 'Item marked as not received',
+        description: `${item.itemCode} - All quantity marked as not received`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to mark as not received',
+        variant: 'destructive',
+      });
+    }
+  };
+
   // Handle Done (Complete)
   const handleComplete = async () => {
     if (!poReceive) return;
@@ -345,7 +351,7 @@ export default function POReceivePage() {
     if (itemsWithoutInput.length > 0) {
       toast({
         title: 'Cannot complete',
-        description: `${itemsWithoutInput.length} item(s) don't have receive input. Please complete all items.`,
+        description: `${itemsWithoutInput.length} item(s) don't have receive input. Please use "Input Terima" or "Mark as Not Received" for each item.`,
         variant: 'destructive',
       });
       return;
@@ -656,13 +662,13 @@ export default function POReceivePage() {
                           )}
                         </TableCell>
                         <TableCell className="font-mono text-sm">
-                          {item.hargaBarang.toLocaleString('id-ID')}
+                          Rp {item.hargaBarang.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </TableCell>
-                        <TableCell className="font-mono text-sm">
-                          {item.costPerPcs.toLocaleString('id-ID')}
+                        <TableCell className="font-mono text-sm text-blue-600 font-semibold">
+                          Rp {(po?.costPerPiece || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </TableCell>
                         <TableCell className="font-mono text-sm font-semibold">
-                          {item.modalBarang.toLocaleString('id-ID')}
+                          Rp {(item.hargaBarang + (po?.costPerPiece || 0)).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-col gap-2">
@@ -684,6 +690,17 @@ export default function POReceivePage() {
                               <AlertTriangle className="mr-2 h-4 w-4" />
                               Input Rusak
                             </Button>
+                            {!item.hasReceivedInput && (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => handleMarkAsNotReceived(item)}
+                                disabled={isCompleted}
+                              >
+                                <X className="mr-2 h-4 w-4" />
+                                Not Received
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell>

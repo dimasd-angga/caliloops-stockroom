@@ -190,6 +190,38 @@ export const updateReceivedQuantity = async (
 };
 
 /**
+ * Mark item as not received (qty received = 0, all qty goes to not received)
+ */
+export const markItemAsNotReceived = async (receiveItemId: string): Promise<void> => {
+  const itemRef = doc(firestore, 'poReceiveItems', receiveItemId);
+  const itemDoc = await getDoc(itemRef);
+
+  if (!itemDoc.exists()) {
+    throw new Error('PO Receive Item not found');
+  }
+
+  const itemData = itemDoc.data() as POReceiveItem;
+
+  // All quantity goes to "not received"
+  const qtyNotReceived = itemData.quantity - itemData.qtyDamaged;
+  const costPerUnit = itemData.quantity > 0 ? itemData.amount / itemData.quantity : 0;
+  const amountNotReceived = qtyNotReceived * costPerUnit;
+
+  await updateDoc(itemRef, {
+    qtyReceived: 0,
+    qtyNotReceived,
+    totalPcsFinal: qtyNotReceived + itemData.qtyDamaged,
+    amountNotReceived,
+    hasReceivedInput: true,
+    updatedAt: Timestamp.now(),
+  });
+
+  // Update PO Receive item count
+  const poReceiveId = itemData.poReceiveId;
+  await updatePOReceiveItemCount(poReceiveId);
+};
+
+/**
  * Update damaged quantity
  */
 export const updateDamagedQuantity = async (
@@ -315,10 +347,17 @@ export const completePOReceive = async (poReceiveId: string): Promise<void> => {
     }
   }
 
-  // Mark as completed
+  // Mark PO Receive as completed
   await updateDoc(poReceiveRef, {
     status: 'COMPLETED',
     completedAt: Timestamp.now(),
+    updatedAt: Timestamp.now(),
+  });
+
+  // Update PO status to DONE (since receiving is completed)
+  const poRef = doc(firestore, 'purchaseOrders', poReceive.poId);
+  await updateDoc(poRef, {
+    status: 'DONE',
     updatedAt: Timestamp.now(),
   });
 };

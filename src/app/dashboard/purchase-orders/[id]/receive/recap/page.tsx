@@ -118,8 +118,12 @@ export default function PORecapPage() {
 
   // Calculate totals
   const totalQty = items.reduce((sum, item) => sum + item.quantity, 0);
-  // Total Amount = sum of (qty × modalBarang)
-  const totalAmount = items.reduce((sum, item) => sum + (item.quantity * item.modalBarang), 0);
+  // Total Amount = sum of (qty × modalBarang) using real-time calculation from master PO
+  // Modal is CEILed and no decimals
+  const totalAmount = items.reduce((sum, item) => {
+    const modalBarangRealtime = Math.ceil(item.hargaBarang + (po?.costPerPiece || 0));
+    return sum + (item.quantity * modalBarangRealtime);
+  }, 0);
   // Total Modal = total pembelian from PO (when PO was created)
   const totalModal = po.totalPembelianIdr || 0;
   const totalQtyDiterima = items.reduce((sum, item) => sum + item.qtyReceived, 0);
@@ -251,7 +255,7 @@ export default function PORecapPage() {
                         {item.quantity}
                       </TableCell>
                       <TableCell className="text-right font-mono">
-                        {item.modalBarang.toLocaleString('id-ID')}
+                        Rp {Math.ceil(item.hargaBarang + (po?.costPerPiece || 0)).toLocaleString('id-ID')}
                       </TableCell>
                       <TableCell className="text-right font-semibold text-green-600">
                         {item.qtyReceived}
@@ -282,13 +286,13 @@ export default function PORecapPage() {
             <div>
               <Label className="text-muted-foreground">Total Amount</Label>
               <p className="text-xl font-bold">
-                {totalAmount.toLocaleString('id-ID')}
+                Rp {totalAmount.toLocaleString('id-ID')}
               </p>
             </div>
             <div>
               <Label className="text-muted-foreground">Total Modal</Label>
               <p className="text-xl font-bold">
-                {totalModal.toLocaleString('id-ID')}
+                Rp {totalModal.toLocaleString('id-ID')}
               </p>
             </div>
             <div>
