@@ -10,6 +10,7 @@ import { getPurchaseOrderWithDetails, addOrUpdatePurchaseOrder } from '@/lib/ser
 import { subscribeToSuppliers } from '@/lib/services/supplierService';
 import { subscribeToCouriers } from '@/lib/services/courierService';
 import { getPOItems, bulkUpdatePOItems } from '@/lib/services/purchaseOrderItemService';
+import { getPOReceiveByPOId, getPOReceiveItems } from '@/lib/services/poReceiveService';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -114,6 +115,27 @@ export default function PurchaseOrderFormPage() {
             try {
                 const fetchedPo = await getPurchaseOrderWithDetails(poId);
                 if (fetchedPo) {
+                    // Fetch PO Receive data to populate receive fields
+                    try {
+                        const poReceive = await getPOReceiveByPOId(poId);
+                        if (poReceive) {
+                            const receiveItems = await getPOReceiveItems(poReceive.id);
+
+                            // Calculate totals from receive items
+                            const totalQtyReceived = receiveItems.reduce((sum, item) => sum + item.qtyReceived, 0);
+                            const totalQtyNotReceived = receiveItems.reduce((sum, item) => sum + item.qtyNotReceived, 0);
+                            const totalQtyDamaged = receiveItems.reduce((sum, item) => sum + item.qtyDamaged, 0);
+
+                            // Update PO with receive data
+                            fetchedPo.qtyReceived = totalQtyReceived;
+                            fetchedPo.qtyNotReceived = totalQtyNotReceived;
+                            fetchedPo.qtyDamaged = totalQtyDamaged;
+                        }
+                    } catch (error) {
+                        console.error("Error fetching PO Receive data:", error);
+                        // Continue even if receive data fails
+                    }
+
                     setPo(fetchedPo);
                     setOriginalCostPerPiece(fetchedPo.costPerPiece || 0);
                 } else {
@@ -150,7 +172,7 @@ export default function PurchaseOrderFormPage() {
         let updatedPo = { ...prevPo, [field]: value };
 
         // Handle numeric fields
-        if (['totalPcs', 'totalRmb', 'exchangeRate', 'qtyReceived', 'qtyNotReceived', 'qtyDamaged', 'totalPembelianIdr', 'packageCount'].includes(field as string)) {
+        if (['totalPcs', 'totalRmb', 'exchangeRate', 'totalPembelianIdr', 'packageCount'].includes(field as string)) {
             const numValue = Number(value);
             updatedPo[field as 'totalRmb'] = isNaN(numValue) ? 0 : numValue;
         }
@@ -351,18 +373,25 @@ export default function PurchaseOrderFormPage() {
             <Separator />
              <div className="space-y-4">
                 <h3 className="text-lg font-medium">Receiving & Confirmation</h3>
+                <p className="text-sm text-muted-foreground">These values are automatically populated from the PO Receive page</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     <div className="grid gap-2">
                         <Label htmlFor="qtyReceived">Qty Diterima</Label>
-                        <NumericInput id="qtyReceived" value={po.qtyReceived || 0} onValueChange={(value) => handleInputChange('qtyReceived', value)} />
+                        <div className='h-10 flex items-center px-3 text-sm font-semibold border rounded-md bg-muted/50'>
+                            {po.qtyReceived || 0}
+                        </div>
                     </div>
                     <div className="grid gap-2">
                         <Label htmlFor="qtyNotReceived">Qty Tidak Diterima</Label>
-                        <NumericInput id="qtyNotReceived" value={po.qtyNotReceived || 0} onValueChange={(value) => handleInputChange('qtyNotReceived', value)} />
+                        <div className='h-10 flex items-center px-3 text-sm font-semibold border rounded-md bg-muted/50'>
+                            {po.qtyNotReceived || 0}
+                        </div>
                     </div>
                     <div className="grid gap-2">
                         <Label htmlFor="qtyDamaged">Qty Rusak</Label>
-                        <NumericInput id="qtyDamaged" value={po.qtyDamaged || 0} onValueChange={(value) => handleInputChange('qtyDamaged', value)} />
+                        <div className='h-10 flex items-center px-3 text-sm font-semibold border rounded-md bg-muted/50'>
+                            {po.qtyDamaged || 0}
+                        </div>
                     </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-4 pt-4">

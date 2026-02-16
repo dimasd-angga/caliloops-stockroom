@@ -347,6 +347,11 @@ export const completePOReceive = async (poReceiveId: string): Promise<void> => {
     }
   }
 
+  // Calculate totals from receive items
+  const totalQtyReceived = items.reduce((sum, item) => sum + item.qtyReceived, 0);
+  const totalQtyNotReceived = items.reduce((sum, item) => sum + item.qtyNotReceived, 0);
+  const totalQtyDamaged = items.reduce((sum, item) => sum + item.qtyDamaged, 0);
+
   // Mark PO Receive as completed
   await updateDoc(poReceiveRef, {
     status: 'COMPLETED',
@@ -354,10 +359,13 @@ export const completePOReceive = async (poReceiveId: string): Promise<void> => {
     updatedAt: Timestamp.now(),
   });
 
-  // Update PO status to DONE (since receiving is completed)
+  // Update PO with receive data and status
   const poRef = doc(firestore, 'purchaseOrders', poReceive.poId);
   await updateDoc(poRef, {
     status: 'DONE',
+    qtyReceived: totalQtyReceived,
+    qtyNotReceived: totalQtyNotReceived,
+    qtyDamaged: totalQtyDamaged,
     updatedAt: Timestamp.now(),
   });
 };

@@ -255,7 +255,7 @@ export default function PORecapPage() {
                         {item.quantity}
                       </TableCell>
                       <TableCell className="text-right font-mono">
-                        Rp {Math.ceil(item.hargaBarang + (po?.costPerPiece || 0)).toLocaleString('id-ID')}
+                        Rp {Math.ceil(item.hargaBarang + (po?.costPerPiece || 0))}
                       </TableCell>
                       <TableCell className="text-right font-semibold text-green-600">
                         {item.qtyReceived}
@@ -286,13 +286,13 @@ export default function PORecapPage() {
             <div>
               <Label className="text-muted-foreground">Total Amount</Label>
               <p className="text-xl font-bold">
-                Rp {totalAmount.toLocaleString('id-ID')}
+                Rp {totalAmount}
               </p>
             </div>
             <div>
               <Label className="text-muted-foreground">Total Modal</Label>
               <p className="text-xl font-bold">
-                Rp {totalModal.toLocaleString('id-ID')}
+                Rp {totalModal}
               </p>
             </div>
             <div>
