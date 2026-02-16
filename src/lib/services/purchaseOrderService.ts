@@ -237,7 +237,7 @@ export const subscribeToPurchaseOrdersBySupplier = (
       where('supplierId', '==', supplierId),
       orderBy('createdAt', 'desc')
     );
-  
+
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
@@ -251,9 +251,38 @@ export const subscribeToPurchaseOrdersBySupplier = (
         onError(error);
       }
     );
-  
+
     return unsubscribe;
   };
+
+/**
+ * Subscribe to a single Purchase Order by ID
+ * Returns real-time updates when the PO changes
+ */
+export const subscribeToPurchaseOrder = (
+  poId: string,
+  callback: (po: PurchaseOrder | null) => void,
+  onError: (error: Error) => void
+) => {
+  const poRef = doc(purchaseOrdersCollection, poId);
+
+  const unsubscribe = onSnapshot(
+    poRef,
+    (docSnapshot) => {
+      if (docSnapshot.exists()) {
+        callback({ id: docSnapshot.id, ...docSnapshot.data() } as PurchaseOrder);
+      } else {
+        callback(null);
+      }
+    },
+    (error) => {
+      console.error('Error subscribing to PO:', error);
+      onError(error);
+    }
+  );
+
+  return unsubscribe;
+};
 
 export const addOrUpdatePurchaseOrder = async (
   poData: Partial<PurchaseOrder> & { storeId: string }

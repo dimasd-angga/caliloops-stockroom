@@ -41,8 +41,10 @@ import {
 } from '@/components/ui/dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
-import type { PurchaseOrder, PurchaseOrderItem, Sku } from '@/lib/types';
-import { getPurchaseOrderWithDetails, addOrUpdatePurchaseOrder } from '@/lib/services/purchaseOrderService';
+import type { PurchaseOrder, PurchaseOrderItem, Sku, Shipping } from '@/lib/types';
+import { getPurchaseOrderWithDetails, addOrUpdatePurchaseOrder, subscribeToPurchaseOrder } from '@/lib/services/purchaseOrderService';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { firestore } from '@/lib/firebase';
 import {
   getPOItems,
   savePOItems,
@@ -83,6 +85,7 @@ export default function PurchaseOrderItemsPage() {
   const { user, selectedStoreId, permissions } = React.useContext(UserContext);
 
   const [po, setPo] = React.useState<PurchaseOrder | null>(null);
+  const [dynamicStatus, setDynamicStatus] = React.useState<PurchaseOrder['status'] | null>(null);
   const [items, setItems] = React.useState<PurchaseOrderItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
@@ -100,21 +103,124 @@ export default function PurchaseOrderItemsPage() {
   const storeId = user?.email === 'superadmin@caliloops.com' ? selectedStoreId : user?.storeId;
 
   // Fetch PO details
-  // Fetch PO details
-  const fetchPO = React.useCallback(async () => {
-    if (!poId) return;
-    try {
-      const fetchedPO = await getPurchaseOrderWithDetails(poId);
-      setPo(fetchedPO);
-    } catch (error) {
-      toast({ title: 'Error fetching PO', variant: 'destructive' });
-      router.push('/dashboard/purchase-orders');
+  // Subscribe to PO details for real-time updates
+  React.useEffect(() => {
+    if (!poId || typeof poId !== 'string') {
+      console.log('[PO Items] Invalid poId:', poId);
+      return;
     }
+
+    console.log('[PO Items] Setting up subscription for PO:', poId);
+
+    let isSubscribed = true;
+
+    const unsubscribe = subscribeToPurchaseOrder(
+      poId,
+      (updatedPO) => {
+        if (!isSubscribed) return;
+
+        console.log('[PO Items] Received PO update:', {
+          poNumber: updatedPO?.poNumber,
+          status: updatedPO?.status,
+          id: updatedPO?.id
+        });
+
+        if (updatedPO) {
+          setPo(updatedPO);
+        } else {
+          console.error('[PO Items] PO not found');
+          toast({ title: 'Purchase Order not found', variant: 'destructive' });
+          router.push('/dashboard/purchase-orders');
+        }
+      },
+      (error) => {
+        if (!isSubscribed) return;
+        console.error('[PO Items] Error subscribing to PO:', error);
+        toast({ title: 'Error loading PO', variant: 'destructive' });
+      }
+    );
+
+    return () => {
+      console.log('[PO Items] Cleaning up subscription for PO:', poId);
+      isSubscribed = false;
+      unsubscribe();
+    };
   }, [poId, toast, router]);
 
+  // Calculate dynamic status based on tracking numbers and shipping data
   React.useEffect(() => {
-    fetchPO();
-  }, [fetchPO]);
+    const calculateDynamicStatus = async () => {
+      if (!po || !storeId) {
+        setDynamicStatus(null);
+        return;
+      }
+
+      console.log('[PO Items] Calculating dynamic status for PO:', po.poNumber);
+
+      try {
+        // If status is DONE, use it as-is
+        if (po.status === 'DONE') {
+          console.log('[PO Items] Status is DONE, using as-is');
+          setDynamicStatus('DONE');
+          return;
+        }
+
+        const poTrackingNumbers = po.trackingNumber || [];
+        const totalResiInPo = poTrackingNumbers.length;
+
+        console.log('[PO Items] Tracking numbers:', poTrackingNumbers);
+
+        if (totalResiInPo === 0) {
+          console.log('[PO Items] No tracking numbers, status = INPUTTED');
+          setDynamicStatus('INPUTTED');
+          return;
+        }
+
+        // Fetch shipping data
+        const shippingCollection = collection(firestore, 'shipping');
+        const shippingQuery = query(shippingCollection, where('storeId', '==', storeId));
+        const shippingSnapshot = await getDocs(shippingQuery);
+
+        const resiStatusMap = new Map<string, 'RECEIVED' | 'SHIPPING'>();
+        shippingSnapshot.docs.forEach(doc => {
+          const shippingData = doc.data() as Shipping;
+          const resiList = Array.isArray(shippingData.noResi) ? shippingData.noResi : [shippingData.noResi].filter(Boolean);
+          resiList.forEach(resi => {
+            resiStatusMap.set(resi, shippingData.status);
+          });
+        });
+
+        console.log('[PO Items] Resi status map size:', resiStatusMap.size);
+
+        const associatedShippingStatuses = poTrackingNumbers.map(tn => resiStatusMap.get(tn)).filter(Boolean);
+        const receivedCount = associatedShippingStatuses.filter(s => s === 'RECEIVED').length;
+
+        console.log('[PO Items] Associated shipping statuses:', associatedShippingStatuses);
+        console.log('[PO Items] Received count:', receivedCount, 'Total:', totalResiInPo);
+
+        let calculatedStatus: PurchaseOrder['status'];
+        if (receivedCount === totalResiInPo) {
+          calculatedStatus = 'RECEIVED';
+        } else if (receivedCount > 0) {
+          calculatedStatus = 'RECEIVED (PARTIAL)';
+        } else if (associatedShippingStatuses.length === totalResiInPo) {
+          calculatedStatus = 'IN SHIPPING';
+        } else if (associatedShippingStatuses.length > 0) {
+          calculatedStatus = 'IN SHIPPING (PARTIAL)';
+        } else {
+          calculatedStatus = 'INPUTTED';
+        }
+
+        console.log('[PO Items] Calculated dynamic status:', calculatedStatus);
+        setDynamicStatus(calculatedStatus);
+      } catch (error) {
+        console.error('[PO Items] Error calculating dynamic status:', error);
+        setDynamicStatus(po.status);
+      }
+    };
+
+    calculateDynamicStatus();
+  }, [po, storeId]);
 
   // Fetch PO items (one-time, not real-time subscription)
   const fetchItems = React.useCallback(async () => {
@@ -659,7 +765,7 @@ export default function PurchaseOrderItemsPage() {
           <div>
             <Label className="text-muted-foreground">Status</Label>
             <div className="mt-1">
-              <Badge>{po.status}</Badge>
+              <Badge>{dynamicStatus || po.status}</Badge>
             </div>
           </div>
         </CardContent>
@@ -709,17 +815,9 @@ export default function PurchaseOrderItemsPage() {
                   className="pl-8 w-[250px]"
                 />
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={async () => {
-                  await fetchPO();
-                  await fetchItems();
-                }}
-                disabled={loading}
-              >
+              <Button size="sm" variant="outline" onClick={fetchItems} disabled={loading}>
                 <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                Refresh
+                Refresh Items
               </Button>
               <Button size="sm" variant="outline" onClick={handleSyncCostPerPcs} disabled={loading || items.length === 0}>
                 <RefreshCw className="mr-2 h-4 w-4" />
