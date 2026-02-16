@@ -100,19 +100,21 @@ export default function PurchaseOrderItemsPage() {
   const storeId = user?.email === 'superadmin@caliloops.com' ? selectedStoreId : user?.storeId;
 
   // Fetch PO details
-  React.useEffect(() => {
-    const fetchPO = async () => {
-      if (!poId) return;
-      try {
-        const fetchedPO = await getPurchaseOrderWithDetails(poId);
-        setPo(fetchedPO);
-      } catch (error) {
-        toast({ title: 'Error fetching PO', variant: 'destructive' });
-        router.push('/dashboard/purchase-orders');
-      }
-    };
-    fetchPO();
+  // Fetch PO details
+  const fetchPO = React.useCallback(async () => {
+    if (!poId) return;
+    try {
+      const fetchedPO = await getPurchaseOrderWithDetails(poId);
+      setPo(fetchedPO);
+    } catch (error) {
+      toast({ title: 'Error fetching PO', variant: 'destructive' });
+      router.push('/dashboard/purchase-orders');
+    }
   }, [poId, toast, router]);
+
+  React.useEffect(() => {
+    fetchPO();
+  }, [fetchPO]);
 
   // Fetch PO items (one-time, not real-time subscription)
   const fetchItems = React.useCallback(async () => {
@@ -707,7 +709,15 @@ export default function PurchaseOrderItemsPage() {
                   className="pl-8 w-[250px]"
                 />
               </div>
-              <Button size="sm" variant="outline" onClick={fetchItems} disabled={loading}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={async () => {
+                  await fetchPO();
+                  await fetchItems();
+                }}
+                disabled={loading}
+              >
                 <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
                 Refresh
               </Button>

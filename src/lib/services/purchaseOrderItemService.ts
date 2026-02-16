@@ -100,6 +100,11 @@ export const getSkusInShipping = async (storeId: string): Promise<{
 
   const posInShipping = posSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PurchaseOrder));
   console.log('[getSkusInShipping] PO Numbers:', posInShipping.map(po => po.poNumber));
+  console.log('[getSkusInShipping] PO Details:', posInShipping.map(po => ({
+    poNumber: po.poNumber,
+    status: po.status,
+    id: po.id
+  })));
 
   // Group by SKU and aggregate - now considering PO Receive status
   const skuMap = new Map<string, {
