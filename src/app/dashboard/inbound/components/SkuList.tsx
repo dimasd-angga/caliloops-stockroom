@@ -604,7 +604,7 @@ export function SkuList({
                                         ) : (
                                             <FileSpreadsheet className="mr-2 h-4 w-4" />
                                         )}
-                                        {isExportingAllSkus ? 'Exporting...' : 'Export All SKUs + Shipping'}
+                                        {isExportingAllSkus ? 'Exporting...' : 'Export All SKUs'}
                                     </DropdownMenuItem>
                                     <DropdownMenuItem onSelect={handleDownloadTemplate}>
                                         <Download className="mr-2 h-4 w-4" />
