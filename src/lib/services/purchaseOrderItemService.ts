@@ -17,6 +17,7 @@ import {
 } from 'firebase/firestore';
 import type { PurchaseOrderItem, PurchaseOrder, POReceive, POReceiveItem } from '../types';
 import { getPOReceiveByPOId, getPOReceiveItems } from './poReceiveService';
+import { getAllSkusByStore } from './skuService';
 
 const poItemsCollection = collection(firestore, 'purchaseOrderItems');
 
@@ -557,4 +558,56 @@ export const getAllPOsForSku = async (
   results.sort((a, b) => a.estimatedArrival.getTime() - b.estimatedArrival.getTime());
 
   return results;
+};
+
+/**
+ * Get ALL SKUs with warehouse and shipping data
+ * Returns all SKUs with:
+ * - Remaining packs/pcs in warehouse (not scanned out)
+ * - Total pcs still in shipping (from POs not DONE)
+ * - PO numbers for items in shipping
+ */
+export const getAllSkusWithShippingData = async (storeId: string): Promise<{
+  skuCode: string;
+  skuName: string;
+  remainingPacks: number;
+  remainingPcs: number;
+  totalPcsInShipping: number;
+  poNumbers: string;
+}[]> => {
+  // Get ALL SKUs for the store
+  const allSkus = await getAllSkusByStore(storeId);
+
+  if (allSkus.length === 0) {
+    return [];
+  }
+
+  // Get shipping data for all SKUs
+  const shippingData = await getSkusInShipping(storeId);
+
+  // Create a map of SKU code to shipping data for quick lookup
+  const shippingMap = new Map<string, { totalPcs: number; poNumbers: string }>();
+  shippingData.forEach(item => {
+    shippingMap.set(item.skuCode, {
+      totalPcs: item.qtyNotReceived, // Use qtyNotReceived as the actual qty still in shipping
+      poNumbers: item.poNumbers,
+    });
+  });
+
+  // Combine all SKUs with their shipping data
+  const result = allSkus.map(sku => {
+    const shipping = shippingMap.get(sku.skuCode);
+
+    return {
+      skuCode: sku.skuCode,
+      skuName: sku.skuName,
+      remainingPacks: sku.remainingPacks || 0,
+      remainingPcs: sku.remainingQuantity || 0,
+      totalPcsInShipping: shipping?.totalPcs || 0,
+      poNumbers: shipping?.poNumbers || '',
+    };
+  });
+
+  // Sort by SKU code
+  return result.sort((a, b) => a.skuCode.localeCompare(b.skuCode));
 };

@@ -30,7 +30,8 @@ import { useToast } from '@/hooks/use-toast';
 import type { Sku, Permissions } from '@/lib/types';
 import { addSku, checkSkuExists } from '@/lib/services/skuService';
 import { useSkuImageUpload } from '@/hooks/useSkuImageUpload';
-import { getAllPOsForSku, getSkusInShipping } from '@/lib/services/purchaseOrderItemService';
+import { getAllPOsForSku, getSkusInShipping, getAllSkusWithShippingData } from '@/lib/services/purchaseOrderItemService';
+import { getStoreById } from '@/lib/services/storeService';
 import {
   PlusCircle,
   Loader2,
@@ -130,6 +131,9 @@ export function SkuList({
 
   // Export SKUs in Shipping State
   const [isExportingSkus, setIsExportingSkus] = React.useState(false);
+
+  // Export All SKUs State
+  const [isExportingAllSkus, setIsExportingAllSkus] = React.useState(false);
 
   // Search state
   const [searchTerm, setSearchTerm] = React.useState('');
@@ -412,6 +416,10 @@ export function SkuList({
     });
 
     try {
+      // Get store information to create unique sheet name
+      const store = await getStoreById(storeIdToUse);
+      const storeName = store?.name || 'Unknown Store';
+
       // Get SKUs in shipping data
       const skuData = await getSkusInShipping(storeIdToUse);
 
@@ -424,7 +432,7 @@ export function SkuList({
         return;
       }
 
-      // Call API to export to Google Sheets
+      // Call API to export to Google Sheets with store-specific sheet name
       const response = await fetch('/api/export-skus-in-shipping', {
         method: 'POST',
         headers: {
@@ -432,7 +440,7 @@ export function SkuList({
         },
         body: JSON.stringify({
           skuData,
-          sheetName: 'SKUs in Shipping',
+          sheetName: `SKUs in Shipping - ${storeName}`,
         }),
       });
 
@@ -462,6 +470,79 @@ export function SkuList({
       });
     } finally {
       setIsExportingSkus(false);
+    }
+  };
+
+  const handleExportAllSkusWithShipping = async () => {
+    const storeIdToUse = user?.email === 'superadmin@caliloops.com' ? selectedStoreId : user?.storeId;
+
+    if (!storeIdToUse) {
+      toast({ title: 'Please select a store', variant: 'destructive' });
+      return;
+    }
+
+    setIsExportingAllSkus(true);
+
+    toast({
+      title: 'Exporting...',
+      description: 'Fetching all SKUs with warehouse and shipping data. Please wait...',
+    });
+
+    try {
+      // Get store information to create unique sheet name
+      const store = await getStoreById(storeIdToUse);
+      const storeName = store?.name || 'Unknown Store';
+
+      // Get all SKUs with shipping data
+      const skuData = await getAllSkusWithShippingData(storeIdToUse);
+
+      if (skuData.length === 0) {
+        toast({
+          title: 'No SKUs found',
+          description: 'There are no SKUs in this store.',
+          variant: 'default'
+        });
+        return;
+      }
+
+      // Call API to export to Google Sheets with store-specific sheet name
+      const response = await fetch('/api/export-all-skus-with-shipping', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          skuData,
+          sheetName: `All SKUs - ${storeName}`,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast({
+          title: 'Export Successful',
+          description: `Exported ${skuData.length} SKUs to Google Sheets`,
+        });
+        if (result.sheetUrl) {
+          window.open(result.sheetUrl, '_blank');
+        }
+      } else {
+        toast({
+          title: 'Export Failed',
+          description: result.message,
+          variant: 'destructive',
+        });
+      }
+    } catch (error: any) {
+      console.error('Export error:', error);
+      toast({
+        title: 'Export Failed',
+        description: error.message || 'An error occurred while exporting',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsExportingAllSkus(false);
     }
   };
 
@@ -516,6 +597,14 @@ export function SkuList({
                                             <FileSpreadsheet className="mr-2 h-4 w-4" />
                                         )}
                                         {isExportingSkus ? 'Exporting...' : 'Export SKUs in Shipping'}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onSelect={handleExportAllSkusWithShipping} disabled={isExportingAllSkus}>
+                                        {isExportingAllSkus ? (
+                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        ) : (
+                                            <FileSpreadsheet className="mr-2 h-4 w-4" />
+                                        )}
+                                        {isExportingAllSkus ? 'Exporting...' : 'Export All SKUs + Shipping'}
                                     </DropdownMenuItem>
                                     <DropdownMenuItem onSelect={handleDownloadTemplate}>
                                         <Download className="mr-2 h-4 w-4" />

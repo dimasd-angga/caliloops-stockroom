@@ -667,3 +667,160 @@ export const exportSkusInShippingToSheets = async (
         };
     }
 };
+
+// ============================================================================
+// ALL SKU WITH WAREHOUSE AND SHIPPING DATA EXPORT
+// ============================================================================
+
+export type AllSkuWithShippingRow = {
+    skuCode: string;
+    skuName: string;
+    remainingPacks: number;
+    remainingPcs: number;
+    totalPcsInShipping: number;
+    poNumbers: string;
+};
+
+const ALL_SKU_HEADERS = [
+    'SKU Code',
+    'SKU Name',
+    'Remaining Packs (Warehouse)',
+    'Remaining Pcs (Warehouse)',
+    'Total Pcs in Shipping',
+    'PO Numbers',
+];
+
+const convertAllSkuToRow = (sku: AllSkuWithShippingRow): any[] => {
+    return [
+        sku.skuCode || '',
+        sku.skuName || '',
+        sku.remainingPacks || 0,
+        sku.remainingPcs || 0,
+        sku.totalPcsInShipping || 0,
+        sku.poNumbers || '',
+    ];
+};
+
+export const exportAllSkusWithShippingToSheets = async (
+    skuData: AllSkuWithShippingRow[],
+    sheetName: string
+): Promise<{ success: boolean; message: string; sheetUrl?: string }> => {
+    try {
+        if (!SPREADSHEET_ID) {
+            throw new Error('Google Sheets Spreadsheet ID is not configured');
+        }
+
+        const sheets = getGoogleSheetsClient();
+
+        // Get existing sheets
+        const spreadsheet = await sheets.spreadsheets.get({
+            spreadsheetId: SPREADSHEET_ID,
+        });
+
+        const existingSheet = spreadsheet.data.sheets?.find(
+            (sheet) => sheet.properties?.title === sheetName
+        );
+
+        let sheetId: number;
+
+        if (existingSheet) {
+            sheetId = existingSheet.properties?.sheetId || 0;
+            await sheets.spreadsheets.values.clear({
+                spreadsheetId: SPREADSHEET_ID,
+                range: `${sheetName}!A:F`,
+            });
+        } else {
+            const addSheetResponse = await sheets.spreadsheets.batchUpdate({
+                spreadsheetId: SPREADSHEET_ID,
+                requestBody: {
+                    requests: [
+                        {
+                            addSheet: {
+                                properties: {
+                                    title: sheetName,
+                                },
+                            },
+                        },
+                    ],
+                },
+            });
+            sheetId = addSheetResponse.data.replies?.[0]?.addSheet?.properties?.sheetId || 0;
+        }
+
+        const rows = [ALL_SKU_HEADERS, ...skuData.map(convertAllSkuToRow)];
+
+        await sheets.spreadsheets.values.update({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${sheetName}!A1`,
+            valueInputOption: 'RAW',
+            requestBody: {
+                values: rows,
+            },
+        });
+
+        await sheets.spreadsheets.batchUpdate({
+            spreadsheetId: SPREADSHEET_ID,
+            requestBody: {
+                requests: [
+                    {
+                        repeatCell: {
+                            range: {
+                                sheetId: sheetId,
+                                startRowIndex: 0,
+                                endRowIndex: 1,
+                            },
+                            cell: {
+                                userEnteredFormat: {
+                                    textFormat: {
+                                        bold: true,
+                                    },
+                                    backgroundColor: {
+                                        red: 0.9,
+                                        green: 0.9,
+                                        blue: 0.9,
+                                    },
+                                },
+                            },
+                            fields: 'userEnteredFormat(textFormat,backgroundColor)',
+                        },
+                    },
+                    {
+                        updateSheetProperties: {
+                            properties: {
+                                sheetId: sheetId,
+                                gridProperties: {
+                                    frozenRowCount: 1,
+                                },
+                            },
+                            fields: 'gridProperties.frozenRowCount',
+                        },
+                    },
+                    {
+                        autoResizeDimensions: {
+                            dimensions: {
+                                sheetId: sheetId,
+                                dimension: 'COLUMNS',
+                                startIndex: 0,
+                                endIndex: ALL_SKU_HEADERS.length,
+                            },
+                        },
+                    },
+                ],
+            },
+        });
+
+        const sheetUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/edit#gid=${sheetId}`;
+
+        return {
+            success: true,
+            message: `Successfully exported ${skuData.length} SKUs with shipping data to Google Sheets`,
+            sheetUrl,
+        };
+    } catch (error: any) {
+        console.error('Error exporting all SKUs with shipping to Google Sheets:', error);
+        return {
+            success: false,
+            message: `Failed to export: ${error.message}`,
+        };
+    }
+};
