@@ -406,6 +406,11 @@ export function SkuList({
 
     setIsExportingSkus(true);
 
+    toast({
+      title: 'Exporting...',
+      description: 'Fetching SKUs in shipping status. Please wait...',
+    });
+
     try {
       // Get SKUs in shipping data
       const skuData = await getSkusInShipping(storeIdToUse);
@@ -505,7 +510,11 @@ export function SkuList({
                                         </DropdownMenuItem>
                                     </DialogTrigger>
                                     <DropdownMenuItem onSelect={handleExportSkusInShipping} disabled={isExportingSkus}>
-                                        <FileSpreadsheet className="mr-2 h-4 w-4" />
+                                        {isExportingSkus ? (
+                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        ) : (
+                                            <FileSpreadsheet className="mr-2 h-4 w-4" />
+                                        )}
                                         {isExportingSkus ? 'Exporting...' : 'Export SKUs in Shipping'}
                                     </DropdownMenuItem>
                                     <DropdownMenuItem onSelect={handleDownloadTemplate}>

@@ -106,11 +106,8 @@ export default function PurchaseOrderItemsPage() {
   // Subscribe to PO details for real-time updates
   React.useEffect(() => {
     if (!poId || typeof poId !== 'string') {
-      console.log('[PO Items] Invalid poId:', poId);
       return;
     }
-
-    console.log('[PO Items] Setting up subscription for PO:', poId);
 
     let isSubscribed = true;
 
@@ -119,29 +116,21 @@ export default function PurchaseOrderItemsPage() {
       (updatedPO) => {
         if (!isSubscribed) return;
 
-        console.log('[PO Items] Received PO update:', {
-          poNumber: updatedPO?.poNumber,
-          status: updatedPO?.status,
-          id: updatedPO?.id
-        });
-
         if (updatedPO) {
           setPo(updatedPO);
         } else {
-          console.error('[PO Items] PO not found');
           toast({ title: 'Purchase Order not found', variant: 'destructive' });
           router.push('/dashboard/purchase-orders');
         }
       },
       (error) => {
         if (!isSubscribed) return;
-        console.error('[PO Items] Error subscribing to PO:', error);
+        console.error('Error subscribing to PO:', error);
         toast({ title: 'Error loading PO', variant: 'destructive' });
       }
     );
 
     return () => {
-      console.log('[PO Items] Cleaning up subscription for PO:', poId);
       isSubscribed = false;
       unsubscribe();
     };
@@ -155,12 +144,9 @@ export default function PurchaseOrderItemsPage() {
         return;
       }
 
-      console.log('[PO Items] Calculating dynamic status for PO:', po.poNumber);
-
       try {
         // If status is DONE, use it as-is
         if (po.status === 'DONE') {
-          console.log('[PO Items] Status is DONE, using as-is');
           setDynamicStatus('DONE');
           return;
         }
@@ -168,10 +154,7 @@ export default function PurchaseOrderItemsPage() {
         const poTrackingNumbers = po.trackingNumber || [];
         const totalResiInPo = poTrackingNumbers.length;
 
-        console.log('[PO Items] Tracking numbers:', poTrackingNumbers);
-
         if (totalResiInPo === 0) {
-          console.log('[PO Items] No tracking numbers, status = INPUTTED');
           setDynamicStatus('INPUTTED');
           return;
         }
@@ -190,13 +173,8 @@ export default function PurchaseOrderItemsPage() {
           });
         });
 
-        console.log('[PO Items] Resi status map size:', resiStatusMap.size);
-
         const associatedShippingStatuses = poTrackingNumbers.map(tn => resiStatusMap.get(tn)).filter(Boolean);
         const receivedCount = associatedShippingStatuses.filter(s => s === 'RECEIVED').length;
-
-        console.log('[PO Items] Associated shipping statuses:', associatedShippingStatuses);
-        console.log('[PO Items] Received count:', receivedCount, 'Total:', totalResiInPo);
 
         let calculatedStatus: PurchaseOrder['status'];
         if (receivedCount === totalResiInPo) {
@@ -211,10 +189,9 @@ export default function PurchaseOrderItemsPage() {
           calculatedStatus = 'INPUTTED';
         }
 
-        console.log('[PO Items] Calculated dynamic status:', calculatedStatus);
         setDynamicStatus(calculatedStatus);
       } catch (error) {
-        console.error('[PO Items] Error calculating dynamic status:', error);
+        console.error('Error calculating dynamic status:', error);
         setDynamicStatus(po.status);
       }
     };

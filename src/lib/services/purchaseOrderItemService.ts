@@ -78,58 +78,101 @@ export const getSkusInShipping = async (storeId: string): Promise<{
   totalPack: number;
   totalQty: number;
   totalPcs: number;
+  qtyReceived: number;
+  qtyNotReceived: number;
+  qtyDamaged: number;
   poNumbers: string;
 }[]> => {
-  console.log('[getSkusInShipping] Starting export for storeId:', storeId);
-
-  // First, get all POs with IN SHIPPING status
+  // Get ALL POs for the store (not just status = IN SHIPPING)
+  // We'll calculate dynamic status and filter afterwards
   const posCollection = collection(firestore, 'purchaseOrders');
   const posQuery = query(
     posCollection,
-    where('storeId', '==', storeId),
-    where('status', 'in', ['IN SHIPPING', 'IN SHIPPING (PARTIAL)'])
+    where('storeId', '==', storeId)
   );
   const posSnapshot = await getDocs(posQuery);
 
-  console.log('[getSkusInShipping] Found POs with IN SHIPPING status:', posSnapshot.size);
-
   if (posSnapshot.empty) {
-    console.log('[getSkusInShipping] No POs found with IN SHIPPING status');
     return [];
   }
 
-  const posInShipping = posSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PurchaseOrder));
-  console.log('[getSkusInShipping] PO Numbers:', posInShipping.map(po => po.poNumber));
-  console.log('[getSkusInShipping] PO Details:', posInShipping.map(po => ({
-    poNumber: po.poNumber,
-    status: po.status,
-    id: po.id
-  })));
+  // Get shipping data to calculate dynamic status
+  const shippingCollection = collection(firestore, 'shipping');
+  const shippingQuery = query(shippingCollection, where('storeId', '==', storeId));
+  const shippingSnapshot = await getDocs(shippingQuery);
+
+  const resiStatusMap = new Map<string, 'RECEIVED' | 'SHIPPING'>();
+  shippingSnapshot.docs.forEach(doc => {
+    const shippingData = doc.data() as any;
+    const resiList = Array.isArray(shippingData.noResi) ? shippingData.noResi : [shippingData.noResi].filter(Boolean);
+    resiList.forEach(resi => {
+      resiStatusMap.set(resi, shippingData.status);
+    });
+  });
+
+  // Calculate dynamic status for each PO and filter for IN SHIPPING
+  const posInShipping: PurchaseOrder[] = [];
+
+  for (const doc of posSnapshot.docs) {
+    const poData = { id: doc.id, ...doc.data() } as PurchaseOrder;
+
+    // Skip if already DONE
+    if (poData.status === 'DONE') {
+      continue;
+    }
+
+    const poTrackingNumbers = poData.trackingNumber || [];
+    const totalResiInPo = poTrackingNumbers.length;
+
+    let dynamicStatus: PurchaseOrder['status'] = poData.status;
+
+    if (totalResiInPo > 0) {
+      const associatedShippingStatuses = poTrackingNumbers.map(tn => resiStatusMap.get(tn)).filter(Boolean);
+      const receivedCount = associatedShippingStatuses.filter(s => s === 'RECEIVED').length;
+
+      if (receivedCount === totalResiInPo) {
+        dynamicStatus = 'RECEIVED';
+      } else if (receivedCount > 0) {
+        dynamicStatus = 'RECEIVED (PARTIAL)';
+      } else if (associatedShippingStatuses.length === totalResiInPo) {
+        dynamicStatus = 'IN SHIPPING';
+      } else if (associatedShippingStatuses.length > 0) {
+        dynamicStatus = 'IN SHIPPING (PARTIAL)';
+      }
+    }
+
+    // Only include POs with IN SHIPPING status (calculated)
+    if (dynamicStatus === 'IN SHIPPING' || dynamicStatus === 'IN SHIPPING (PARTIAL)') {
+      posInShipping.push(poData);
+    }
+  }
+
+  if (posInShipping.length === 0) {
+    return [];
+  }
 
   // Group by SKU and aggregate - now considering PO Receive status
   const skuMap = new Map<string, {
     skuName: string;
     totalQty: number;
+    qtyReceived: number;
+    qtyNotReceived: number;
+    qtyDamaged: number;
     poSet: Set<string>;
   }>();
 
   // Process each PO and account for receive status
   for (const po of posInShipping) {
-    console.log(`[getSkusInShipping] Processing PO: ${po.poNumber}, Status: ${po.status}`);
-
     // Skip if PO status is DONE or RECEIVED
     if (po.status === 'DONE' || po.status === 'RECEIVED') {
-      console.log(`[getSkusInShipping] Skipping PO ${po.poNumber} - status is ${po.status}`);
       continue;
     }
 
     // Check if PO Receive exists
     const poReceive = await getPOReceiveByPOId(po.id);
-    console.log(`[getSkusInShipping] PO ${po.poNumber} - PO Receive exists:`, !!poReceive, 'Status:', poReceive?.status);
 
     // Skip if PO Receive is COMPLETED
     if (poReceive && poReceive.status === 'COMPLETED') {
-      console.log(`[getSkusInShipping] Skipping PO ${po.poNumber} - PO Receive is COMPLETED`);
       continue;
     }
 
@@ -141,88 +184,76 @@ export const getSkusInShipping = async (storeId: string): Promise<{
     );
     const itemsSnapshot = await getDocs(itemsQuery);
 
-    console.log(`[getSkusInShipping] PO ${po.poNumber} - Found ${itemsSnapshot.size} items`);
-
     if (itemsSnapshot.empty) {
-      console.log(`[getSkusInShipping] Skipping PO ${po.poNumber} - no items found`);
       continue;
     }
 
     const items = itemsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PurchaseOrderItem));
-    const itemsWithSku = items.filter(item => item.skuCode);
-    console.log(`[getSkusInShipping] PO ${po.poNumber} - Items with SKU: ${itemsWithSku.length}/${items.length}`);
 
-    // If PO Receive is IN_PROGRESS, only count qtyNotReceived
+    // If PO Receive is IN_PROGRESS, use receive item data for status
     if (poReceive && poReceive.status === 'IN_PROGRESS') {
       const receiveItems = await getPOReceiveItems(poReceive.id);
-      console.log(`[getSkusInShipping] PO ${po.poNumber} - Processing ${receiveItems.length} receive items`);
 
       // Create a map of poItemId -> latest purchaseOrderItem for SKU data
       const itemMap = new Map(items.map(item => [item.id, item]));
-      console.log(`[getSkusInShipping] Created itemMap with ${itemMap.size} entries`);
 
-      // Process each receive item (which includes qty not received info)
+      // Process each receive item - INCLUDE ALL ITEMS (no qtyNotReceived filter)
       receiveItems.forEach(receiveItem => {
-        console.log(`[getSkusInShipping] Processing receiveItem: ${receiveItem.itemCode}, poItemId: ${receiveItem.poItemId}`);
-
         // Get the latest SKU data from purchaseOrderItems
         const latestItem = itemMap.get(receiveItem.poItemId);
-        console.log(`[getSkusInShipping] latestItem found:`, !!latestItem, 'latestItem.skuCode:', latestItem?.skuCode, 'receiveItem.skuCode:', receiveItem.skuCode);
-
         const skuCode = latestItem?.skuCode || receiveItem.skuCode;
         const skuName = latestItem?.skuName || receiveItem.skuName;
 
         if (!skuCode) {
-          console.log(`[getSkusInShipping] Skipping receive item ${receiveItem.itemCode} - no SKU code (latestItem: ${!!latestItem})`);
-          return;
-        }
-        if (receiveItem.qtyNotReceived === 0) {
-          console.log(`[getSkusInShipping] Skipping ${skuCode} (item: ${receiveItem.itemCode}) - qtyNotReceived is 0`);
           return;
         }
 
-        console.log(`[getSkusInShipping] ✓ Adding ${skuCode}: ${receiveItem.qtyNotReceived} pcs (not received) from item ${receiveItem.itemCode}`);
+        // Include ALL items regardless of qtyNotReceived
         const existing = skuMap.get(skuCode);
         if (existing) {
-          existing.totalQty += receiveItem.qtyNotReceived;
+          existing.totalQty += receiveItem.quantity;
+          existing.qtyReceived += receiveItem.qtyReceived;
+          existing.qtyNotReceived += receiveItem.qtyNotReceived;
+          existing.qtyDamaged += receiveItem.qtyDamaged;
           existing.poSet.add(po.poNumber);
-          console.log(`[getSkusInShipping] Updated existing SKU ${skuCode}, new totalQty: ${existing.totalQty}`);
         } else {
           skuMap.set(skuCode, {
             skuName: skuName || '',
-            totalQty: receiveItem.qtyNotReceived,
+            totalQty: receiveItem.quantity,
+            qtyReceived: receiveItem.qtyReceived,
+            qtyNotReceived: receiveItem.qtyNotReceived,
+            qtyDamaged: receiveItem.qtyDamaged,
             poSet: new Set([po.poNumber]),
           });
-          console.log(`[getSkusInShipping] Added new SKU ${skuCode} with qty ${receiveItem.qtyNotReceived}`);
         }
       });
     } else {
       // No PO Receive or not started yet - count full original quantity
-      console.log(`[getSkusInShipping] PO ${po.poNumber} - No PO Receive or not started, counting full quantities`);
       items.forEach(item => {
         if (!item.skuCode) {
-          console.log(`[getSkusInShipping] Skipping item ${item.itemCode} - no SKU code`);
           return;
         }
 
-        console.log(`[getSkusInShipping] Adding ${item.skuCode}: ${item.quantity} pcs`);
         const existing = skuMap.get(item.skuCode);
         if (existing) {
           existing.totalQty += item.quantity;
+          existing.qtyReceived += 0;
+          existing.qtyNotReceived += item.quantity; // All pending
+          existing.qtyDamaged += 0;
           existing.poSet.add(po.poNumber);
         } else {
           skuMap.set(item.skuCode, {
             skuName: item.skuName || '',
             totalQty: item.quantity,
+            qtyReceived: 0,
+            qtyNotReceived: item.quantity, // All pending
+            qtyDamaged: 0,
             poSet: new Set([po.poNumber]),
           });
         }
       });
     }
   }
-
-  console.log(`[getSkusInShipping] Final SKU map size: ${skuMap.size}`);
-  console.log(`[getSkusInShipping] SKU codes:`, Array.from(skuMap.keys()));
 
   // Convert to array and format
   const result = Array.from(skuMap.entries()).map(([skuCode, data]) => ({
@@ -231,10 +262,11 @@ export const getSkusInShipping = async (storeId: string): Promise<{
     totalPack: data.poSet.size, // Number of unique POs
     totalQty: data.totalQty,
     totalPcs: data.totalQty, // Same as totalQty for now
+    qtyReceived: data.qtyReceived,
+    qtyNotReceived: data.qtyNotReceived,
+    qtyDamaged: data.qtyDamaged,
     poNumbers: Array.from(data.poSet).sort().join(', '),
   }));
-
-  console.log(`[getSkusInShipping] Returning ${result.length} SKUs`);
 
   // Sort by SKU code
   return result.sort((a, b) => a.skuCode.localeCompare(b.skuCode));
