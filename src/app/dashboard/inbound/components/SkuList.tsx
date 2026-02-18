@@ -412,7 +412,7 @@ export function SkuList({
 
     toast({
       title: 'Exporting...',
-      description: 'Fetching SKUs in shipping status. Please wait...',
+      description: 'Fetching all SKUs with warehouse and shipping data. Please wait...',
     });
 
     try {
@@ -420,13 +420,13 @@ export function SkuList({
       const store = await getStoreById(storeIdToUse);
       const storeName = store?.name || 'Unknown Store';
 
-      // Get SKUs in shipping data
+      // Get SKUs in shipping data (includes ALL SKUs)
       const skuData = await getSkusInShipping(storeIdToUse);
 
       if (skuData.length === 0) {
         toast({
-          title: 'No SKUs in shipping',
-          description: 'There are no SKUs in POs with shipping status.',
+          title: 'No SKUs found',
+          description: 'There are no SKUs in this store.',
           variant: 'default'
         });
         return;

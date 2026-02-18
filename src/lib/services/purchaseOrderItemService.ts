@@ -72,16 +72,14 @@ export const getPOItemsCount = async (poId: string): Promise<number> => {
  * Get aggregated SKU data from all PO items in shipping status
  * Returns data grouped by SKU with total quantities and PO numbers
  * Updated to account for PO Receive progress (only counts qty not yet received)
+ * Now includes ALL SKUs with warehouse data (remainingPacks, remainingPcs)
  */
 export const getSkusInShipping = async (storeId: string): Promise<{
   skuCode: string;
   skuName: string;
-  totalPack: number;
-  totalQty: number;
-  totalPcs: number;
-  qtyReceived: number;
-  qtyNotReceived: number;
-  qtyDamaged: number;
+  remainingPacks: number;
+  remainingPcs: number;
+  totalPcsInShipping: number;
   poNumbers: string;
 }[]> => {
   // Get ALL POs for the store (not just status = IN SHIPPING)
@@ -148,11 +146,8 @@ export const getSkusInShipping = async (storeId: string): Promise<{
     }
   }
 
-  if (posInShipping.length === 0) {
-    return [];
-  }
-
   // Group by SKU and aggregate - now considering PO Receive status
+  // Note: We continue even if posInShipping is empty, to include all SKUs with 0 shipping data
   const skuMap = new Map<string, {
     skuName: string;
     totalQty: number;
@@ -256,21 +251,28 @@ export const getSkusInShipping = async (storeId: string): Promise<{
     }
   }
 
-  // Convert to array and format
-  const result = Array.from(skuMap.entries()).map(([skuCode, data]) => ({
-    skuCode,
-    skuName: data.skuName,
-    totalPack: data.poSet.size, // Number of unique POs
-    totalQty: data.totalQty,
-    totalPcs: data.totalQty, // Same as totalQty for now
-    qtyReceived: data.qtyReceived,
-    qtyNotReceived: data.qtyNotReceived,
-    qtyDamaged: data.qtyDamaged,
-    poNumbers: Array.from(data.poSet).sort().join(', '),
-  }));
+  // Get ALL SKUs from the store
+  const allSkus = await getAllSkusByStore(storeId);
 
-  // Sort by SKU code
-  return result.sort((a, b) => a.skuCode.localeCompare(b.skuCode));
+  // Convert shipping data to array and merge with all SKUs
+  const result = allSkus.map(sku => {
+    const shippingData = skuMap.get(sku.skuCode);
+
+    return {
+      skuCode: sku.skuCode,
+      skuName: sku.skuName,
+      remainingPacks: sku.remainingPacks || 0, // Warehouse data
+      remainingPcs: sku.remainingQuantity || 0, // Warehouse data
+      totalPcsInShipping: shippingData?.qtyNotReceived || 0, // Shipping data
+      poNumbers: shippingData ? Array.from(shippingData.poSet).sort().join(', ') : '',
+    };
+  });
+
+  // Sort: Group A (has shipping) DESC by totalPcsInShipping, then Group B (no shipping) ASC by skuCode
+  const groupA = result.filter(item => item.totalPcsInShipping > 0).sort((a, b) => b.totalPcsInShipping - a.totalPcsInShipping);
+  const groupB = result.filter(item => item.totalPcsInShipping === 0).sort((a, b) => a.skuCode.localeCompare(b.skuCode));
+
+  return [...groupA, ...groupB];
 };
 
 export const savePOItems = async (

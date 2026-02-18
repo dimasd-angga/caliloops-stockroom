@@ -517,20 +517,18 @@ export const exportPoDetailsToSheets = async (
 export type SkuInShippingRow = {
     skuCode: string;
     skuName: string;
-    totalPack: number;  // Total unique POs
-    totalQty: number;   // Sum of quantities
-    totalPcs: number;   // Sum of quantities (same as totalQty for now)
-    qtyReceived: number; // Total qty received
-    qtyNotReceived: number; // Total qty not received
-    qtyDamaged: number; // Total qty damaged
+    remainingPacks: number;  // Warehouse: packs not scanned out
+    remainingPcs: number;    // Warehouse: pcs not scanned out
+    totalPcsInShipping: number; // Shipping: pcs still pending from POs not DONE
     poNumbers: string;  // Comma-separated PO numbers
 };
 
 const SKU_IN_SHIPPING_HEADERS = [
     'SKU Code',
     'SKU Name',
+    'Total Pack (Warehouse)',
+    'Total Pcs (Warehouse)',
     'Total Pcs in Shipping',
-    'Qty Not Received',
     'PO Numbers',
 ];
 
@@ -538,8 +536,9 @@ const convertSkuInShippingToRow = (sku: SkuInShippingRow): any[] => {
     return [
         sku.skuCode || '',
         sku.skuName || '',
-        sku.totalPcs || 0,
-        sku.qtyNotReceived || 0,
+        sku.remainingPacks || 0,
+        sku.remainingPcs || 0,
+        sku.totalPcsInShipping || 0,
         sku.poNumbers || '',
     ];
 };
@@ -570,7 +569,7 @@ export const exportSkusInShippingToSheets = async (
             sheetId = existingSheet.properties?.sheetId || 0;
             await sheets.spreadsheets.values.clear({
                 spreadsheetId: SPREADSHEET_ID,
-                range: `${sheetName}!A:E`,
+                range: `${sheetName}!A:F`,
             });
         } else {
             const addSheetResponse = await sheets.spreadsheets.batchUpdate({
