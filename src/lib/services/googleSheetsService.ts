@@ -529,12 +529,8 @@ export type SkuInShippingRow = {
 const SKU_IN_SHIPPING_HEADERS = [
     'SKU Code',
     'SKU Name',
-    'Total Pack',
-    'Total Qty',
     'Total Pcs in Shipping',
-    'Qty Received',
     'Qty Not Received',
-    'Qty Damaged',
     'PO Numbers',
 ];
 
@@ -542,12 +538,8 @@ const convertSkuInShippingToRow = (sku: SkuInShippingRow): any[] => {
     return [
         sku.skuCode || '',
         sku.skuName || '',
-        sku.totalPack || 0,
-        sku.totalQty || 0,
         sku.totalPcs || 0,
-        sku.qtyReceived || 0,
         sku.qtyNotReceived || 0,
-        sku.qtyDamaged || 0,
         sku.poNumbers || '',
     ];
 };
@@ -578,7 +570,7 @@ export const exportSkusInShippingToSheets = async (
             sheetId = existingSheet.properties?.sheetId || 0;
             await sheets.spreadsheets.values.clear({
                 spreadsheetId: SPREADSHEET_ID,
-                range: `${sheetName}!A:I`,
+                range: `${sheetName}!A:E`,
             });
         } else {
             const addSheetResponse = await sheets.spreadsheets.batchUpdate({
