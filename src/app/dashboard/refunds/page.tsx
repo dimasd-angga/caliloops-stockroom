@@ -64,6 +64,7 @@ import { Calendar as CalendarIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Timestamp } from 'firebase/firestore';
 import { NumericInput } from '@/components/ui/numeric-input';
+import { RefundSummaryModal } from '@/components/RefundSummaryModal';
 
 const ROWS_PER_PAGE = 10;
 
@@ -93,6 +94,10 @@ export default function RefundsPage() {
   // Delete Confirmation State
   const [isDeleteAlertOpen, setIsDeleteAlertOpen] = React.useState(false);
   const [refundToDelete, setRefundToDelete] = React.useState<Refund | null>(null);
+
+  // Refund Summary Modal State
+  const [isSummaryModalOpen, setIsSummaryModalOpen] = React.useState(false);
+  const [summaryRefund, setSummaryRefund] = React.useState<Refund | null>(null);
 
 
   // Pagination state
@@ -509,7 +514,24 @@ export default function RefundsPage() {
                         <Label htmlFor="isDeducted">Deducted from Supplier?</Label>
                      </div>
                 </div>
-                <DialogFooter>
+                <DialogFooter className="gap-2">
+                    {currentRefund?.id && (
+                        <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={() => {
+                                if (currentRefund && currentRefund.id) {
+                                    setSummaryRefund(currentRefund as Refund);
+                                    setIsSummaryModalOpen(true);
+                                }
+                            }}
+                            disabled={isSaving}
+                            className="mr-auto"
+                        >
+                            <DollarSign className="mr-2 h-4 w-4" />
+                            View Summary
+                        </Button>
+                    )}
                     <Button variant="outline" onClick={resetModal} disabled={isSaving}>Cancel</Button>
                     <Button type="submit" disabled={isSaving}>
                         {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -535,6 +557,15 @@ export default function RefundsPage() {
               </AlertDialogFooter>
           </AlertDialogContent>
       </AlertDialog>
+
+      {/* Refund Summary Modal */}
+      {summaryRefund && (
+        <RefundSummaryModal
+          open={isSummaryModalOpen}
+          onOpenChange={setIsSummaryModalOpen}
+          refund={summaryRefund}
+        />
+      )}
     </div>
   );
 }

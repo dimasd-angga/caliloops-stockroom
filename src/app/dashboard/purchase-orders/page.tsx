@@ -25,6 +25,8 @@ import type { PurchaseOrder, Shipping, Supplier } from '@/lib/types';
 import { subscribeToPurchaseOrders, getPurchaseOrderWithDetails, deletePurchaseOrder } from '@/lib/services/purchaseOrderService';
 import { getAllShipping } from '@/lib/services/shippingService';
 import { getStoreById } from '@/lib/services/storeService';
+import { getPOItemsCount } from '@/lib/services/purchaseOrderItemService';
+import { getReceivedItemsCount } from '@/lib/services/poReceiveService';
 import {
     Select,
     SelectContent,
@@ -32,7 +34,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { PlusCircle, Loader2, FileText, AlertTriangle, Search, ChevronsRight, MoreHorizontal, Edit, Trash2, CheckCircle, XCircle, ChevronDown, FileSpreadsheet } from 'lucide-react';
+import { PlusCircle, Loader2, FileText, AlertTriangle, Search, ChevronsRight, MoreHorizontal, Edit, Trash2, CheckCircle, XCircle, ChevronDown, FileSpreadsheet, ListChecks, PackageCheck, FileBarChart } from 'lucide-react';
 import {
     DropdownMenu,
     DropdownMenuCheckboxItem,
@@ -82,6 +84,9 @@ export default function PurchaseOrdersPage() {
     // Delete Confirmation State
     const [isDeleteAlertOpen, setIsDeleteAlertOpen] = React.useState(false);
     const [poToDelete, setPoToDelete] = React.useState<PurchaseOrder | null>(null);
+
+    // Items Progress State
+    const [itemsProgress, setItemsProgress] = React.useState<Map<string, { total: number; received: number }>>(new Map());
 
 
     const storeId = user?.email === 'superadmin@caliloops.com' ? selectedStoreId : user?.storeId;
@@ -177,6 +182,34 @@ export default function PurchaseOrdersPage() {
         return filteredPOs.slice(startIndex, endIndex);
     }, [filteredPOs, currentPage]);
 
+    // Fetch items progress for visible POs
+    React.useEffect(() => {
+        const fetchProgress = async () => {
+            if (paginatedPOs.length === 0) return;
+
+            const progressMap = new Map<string, { total: number; received: number }>();
+
+            await Promise.all(
+                paginatedPOs.map(async (po) => {
+                    try {
+                        const [totalItems, receivedItems] = await Promise.all([
+                            getPOItemsCount(po.id),
+                            getReceivedItemsCount(po.id),
+                        ]);
+                        progressMap.set(po.id, { total: totalItems, received: receivedItems });
+                    } catch (error) {
+                        console.error(`Error fetching progress for PO ${po.id}:`, error);
+                        progressMap.set(po.id, { total: 0, received: 0 });
+                    }
+                })
+            );
+
+            setItemsProgress(progressMap);
+        };
+
+        fetchProgress();
+    }, [paginatedPOs]);
+
     const handlePageChange = (page: number) => {
         if (page >= 1 && page <= totalPages) {
             setCurrentPage(page);
@@ -267,9 +300,9 @@ export default function PurchaseOrdersPage() {
                     photoUrl: po.photoUrl,
                     trackingNumber: po.trackingNumber,
                     shippingNote: po.shippingNote,
-                    totalPcsOldReceived: po.totalPcsOldReceived,
-                    totalPcsNewReceived: po.totalPcsNewReceived,
-                    totalPcsRefunded: po.totalPcsRefunded,
+                    qtyReceived: po.qtyReceived,
+                    qtyNotReceived: po.qtyNotReceived,
+                    qtyDamaged: po.qtyDamaged,
                     status: po.status,
                     isStockUpdated: po.isStockUpdated,
                     isOldItemsInPurchaseMenu: po.isOldItemsInPurchaseMenu,
@@ -489,13 +522,14 @@ export default function PurchaseOrdersPage() {
                                     <TableHead>Order Date</TableHead>
                                     <TableHead>Supplier</TableHead>
                                     <TableHead>Status</TableHead>
+                                    <TableHead>Receive Progress</TableHead>
                                     <TableHead>Total Pcs</TableHead>
                                     <TableHead>Total RMB</TableHead>
                                     <TableHead>Cost per Pcs</TableHead>
                                     <TableHead>Note</TableHead>
-                                    <TableHead>Pcs Brg Lama Diterima</TableHead>
-                                    <TableHead>Pcs Brg Baru Diterima</TableHead>
-                                    <TableHead>Pcs Refund</TableHead>
+                                    <TableHead>Qty Diterima</TableHead>
+                                    <TableHead>Qty Tidak Diterima</TableHead>
+                                    <TableHead>Qty Rusak</TableHead>
                                     <TableHead>Brg Lama di Pembelian?</TableHead>
                                     <TableHead>PDF Brg Baru?</TableHead>
                                     <TableHead>Printout?</TableHead>
@@ -512,24 +546,35 @@ export default function PurchaseOrdersPage() {
                             <TableBody>
                                 {loading ? (
                                     <TableRow>
-                                        <TableCell colSpan={22} className="h-24 text-center">
+                                        <TableCell colSpan={23} className="h-24 text-center">
                                             <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
                                         </TableCell>
                                     </TableRow>
                                 ) : paginatedPOs.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={22} className="h-24 text-center">
+                                        <TableCell colSpan={23} className="h-24 text-center">
                                             No purchase orders found. Add a new PO to get started.
                                         </TableCell>
                                     </TableRow>
                                 ) : (
-                                    paginatedPOs.map((po) => (
+                                    paginatedPOs.map((po) => {
+                                        const progress = itemsProgress.get(po.id);
+                                        return (
                                         <TableRow key={po.id}>
                                             <TableCell className="font-medium">{po.poNumber}</TableCell>
                                             <TableCell>{format(po.orderDate.toDate(), 'dd MMM yyyy')}</TableCell>
                                             <TableCell className="whitespace-nowrap">{po.supplierName}</TableCell>
                                             <TableCell>
                                                 <Badge variant={getStatusVariant(po.status)} className="whitespace-nowrap">{po.status}</Badge>
+                                            </TableCell>
+                                            <TableCell className="whitespace-nowrap font-medium">
+                                                {progress ? (
+                                                    <span className={progress.received === progress.total && progress.total > 0 ? 'text-green-600' : ''}>
+                                                        {progress.received}/{progress.total} Items
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-muted-foreground">-</span>
+                                                )}
                                             </TableCell>
                                             <TableCell>{po.totalPcs}</TableCell>
                                             <TableCell>{po.totalRmb.toLocaleString('zh-CN')}</TableCell>
@@ -540,9 +585,9 @@ export default function PurchaseOrdersPage() {
                                                 }
                                             </TableCell>
                                             <TableCell className="max-w-xs truncate">{po.shippingNote}</TableCell>
-                                            <TableCell>{po.totalPcsOldReceived}</TableCell>
-                                            <TableCell>{po.totalPcsNewReceived}</TableCell>
-                                            <TableCell>{po.totalPcsRefunded}</TableCell>
+                                            <TableCell>{po.qtyReceived || 0}</TableCell>
+                                            <TableCell>{po.qtyNotReceived || 0}</TableCell>
+                                            <TableCell>{po.qtyDamaged || 0}</TableCell>
                                             <TableCell><YesNo value={po.isOldItemsInPurchaseMenu} /></TableCell>
                                             <TableCell><YesNo value={po.isNewItemsPdfCreated} /></TableCell>
                                             <TableCell><YesNo value={po.isPrintoutCreated} /></TableCell>
@@ -564,6 +609,16 @@ export default function PurchaseOrdersPage() {
                                                             </Button>
                                                         </DropdownMenuTrigger>
                                                         <DropdownMenuContent align='end'>
+                                                            <DropdownMenuItem onClick={() => router.push(`/dashboard/purchase-orders/${po.id}/items`)}>
+                                                                <ListChecks className="mr-2 h-4 w-4" /> Items Details
+                                                            </DropdownMenuItem>
+                                                            <DropdownMenuItem onClick={() => router.push(`/dashboard/purchase-orders/${po.id}/receive`)}>
+                                                                <PackageCheck className="mr-2 h-4 w-4" /> PO Receive
+                                                            </DropdownMenuItem>
+                                                            <DropdownMenuItem onClick={() => router.push(`/dashboard/purchase-orders/${po.id}/receive/recap`)}>
+                                                                <FileBarChart className="mr-2 h-4 w-4" /> Recap
+                                                            </DropdownMenuItem>
+                                                            <DropdownMenuSeparator />
                                                             <DropdownMenuItem onClick={() => router.push(`/dashboard/purchase-orders/${po.id}`)}>
                                                                 <Edit className="mr-2 h-4 w-4" /> Edit
                                                             </DropdownMenuItem>
@@ -575,7 +630,8 @@ export default function PurchaseOrdersPage() {
                                                 </div>
                                             </TableCell>
                                         </TableRow>
-                                    ))
+                                        );
+                                    })
                                 )}
                             </TableBody>
                         </Table>

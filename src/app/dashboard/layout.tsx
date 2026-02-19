@@ -70,8 +70,23 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [user, setUser] = React.useState<UserWithRole | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [permissions, setPermissions] = React.useState<Permissions>(defaultPermissions);
-  const [selectedStoreId, setSelectedStoreId] = React.useState<string | null>(null);
+  const [selectedStoreId, setSelectedStoreId] = React.useState<string | null>(() => {
+    // Load from localStorage on initial mount
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('selectedStoreId');
+    }
+    return null;
+  });
   const router = useRouter();
+
+  // Persist selectedStoreId to localStorage whenever it changes
+  React.useEffect(() => {
+    if (selectedStoreId) {
+      localStorage.setItem('selectedStoreId', selectedStoreId);
+    } else {
+      localStorage.removeItem('selectedStoreId');
+    }
+  }, [selectedStoreId]);
 
   React.useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseAuthUser | null) => {

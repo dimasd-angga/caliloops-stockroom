@@ -9,6 +9,8 @@ import type { PurchaseOrder, Supplier, Courier, Refund } from '@/lib/types';
 import { getPurchaseOrderWithDetails, addOrUpdatePurchaseOrder } from '@/lib/services/purchaseOrderService';
 import { subscribeToSuppliers } from '@/lib/services/supplierService';
 import { subscribeToCouriers } from '@/lib/services/courierService';
+import { getPOItems, bulkUpdatePOItems } from '@/lib/services/purchaseOrderItemService';
+import { getPOReceiveByPOId, getPOReceiveItems } from '@/lib/services/poReceiveService';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -92,9 +94,10 @@ export default function PurchaseOrderFormPage() {
   const { user, permissions, selectedStoreId } = React.useContext(UserContext);
   
   const [po, setPo] = React.useState<Partial<PurchaseOrder> | null>(null);
+  const [originalCostPerPiece, setOriginalCostPerPiece] = React.useState<number>(0);
   const [suppliers, setSuppliers] = React.useState<Supplier[]>([]);
   const [couriers, setCouriers] = React.useState<Courier[]>([]);
-  
+
   const [loading, setLoading] = React.useState(true);
   const [isSaving, setIsSaving] = React.useState(false);
 
@@ -112,7 +115,29 @@ export default function PurchaseOrderFormPage() {
             try {
                 const fetchedPo = await getPurchaseOrderWithDetails(poId);
                 if (fetchedPo) {
+                    // Fetch PO Receive data to populate receive fields
+                    try {
+                        const poReceive = await getPOReceiveByPOId(poId);
+                        if (poReceive) {
+                            const receiveItems = await getPOReceiveItems(poReceive.id);
+
+                            // Calculate totals from receive items
+                            const totalQtyReceived = receiveItems.reduce((sum, item) => sum + item.qtyReceived, 0);
+                            const totalQtyNotReceived = receiveItems.reduce((sum, item) => sum + item.qtyNotReceived, 0);
+                            const totalQtyDamaged = receiveItems.reduce((sum, item) => sum + item.qtyDamaged, 0);
+
+                            // Update PO with receive data
+                            fetchedPo.qtyReceived = totalQtyReceived;
+                            fetchedPo.qtyNotReceived = totalQtyNotReceived;
+                            fetchedPo.qtyDamaged = totalQtyDamaged;
+                        }
+                    } catch (error) {
+                        console.error("Error fetching PO Receive data:", error);
+                        // Continue even if receive data fails
+                    }
+
                     setPo(fetchedPo);
+                    setOriginalCostPerPiece(fetchedPo.costPerPiece || 0);
                 } else {
                     toast({ title: 'Purchase Order not found', variant: 'destructive' });
                     router.push('/dashboard/purchase-orders');
@@ -123,6 +148,7 @@ export default function PurchaseOrderFormPage() {
             }
         } else {
             setPo({ orderDate: Timestamp.now(), trackingNumber: [], status: 'INPUTTED' });
+            setOriginalCostPerPiece(0);
         }
         setLoading(false);
     };
@@ -142,12 +168,13 @@ export default function PurchaseOrderFormPage() {
   const handleInputChange = (field: keyof PurchaseOrder, value: any) => {
     setPo(prevPo => {
         if (!prevPo) return null;
-        
+
         let updatedPo = { ...prevPo, [field]: value };
-        
-        if (['totalPcs', 'totalRmb', 'exchangeRate', 'totalPcsOldReceived', 'totalPcsNewReceived', 'totalPcsRefunded', 'totalPembelianIdr', 'packageCount'].includes(field as string)) {
+
+        // Handle numeric fields
+        if (['totalPcs', 'totalRmb', 'exchangeRate', 'totalPembelianIdr', 'packageCount'].includes(field as string)) {
             const numValue = Number(value);
-            updatedPo[field as 'totalPcs'] = isNaN(numValue) ? 0 : numValue;
+            updatedPo[field as 'totalRmb'] = isNaN(numValue) ? 0 : numValue;
         }
 
         return updatedPo;
@@ -173,7 +200,7 @@ export default function PurchaseOrderFormPage() {
       toast({ title: 'Please fill all required fields', description: "PO Number, Supplier and Order Date are mandatory.", variant: 'destructive' });
       return;
     }
-    
+
     if (!permissions?.canManagePurchaseOrders && !permissions?.hasFullAccess) {
         toast({ title: "Permission Denied", variant: "destructive" });
         return;
@@ -182,16 +209,42 @@ export default function PurchaseOrderFormPage() {
     setIsSaving(true);
     try {
       const supplier = suppliers.find(s => s.id === po.supplierId);
-      
+
       let dataToSave: Partial<PurchaseOrder> = {
         ...po,
         storeId,
         supplierName: supplier?.name || '',
         supplierCode: supplier?.supplierCode || '',
       };
-      
+
       await addOrUpdatePurchaseOrder(dataToSave as any);
-      toast({ title: isNew ? 'PO Created Successfully!' : 'PO Updated Successfully!' });
+
+      // If costPerPiece changed, update all PO items
+      const newCostPerPiece = po.costPerPiece || 0;
+      if (!isNew && newCostPerPiece !== originalCostPerPiece && typeof poId === 'string') {
+        try {
+          const items = await getPOItems(poId);
+          if (items.length > 0) {
+            const itemsToUpdate = items.map((item) => ({
+              id: item.id,
+              data: {
+                costPerPcs: newCostPerPiece,
+                modalBarang: item.hargaBarang + newCostPerPiece,
+              },
+            }));
+            await bulkUpdatePOItems(itemsToUpdate);
+            toast({ title: 'PO & Items Updated Successfully!', description: `Updated ${items.length} items with new cost per pcs` });
+          } else {
+            toast({ title: 'PO Updated Successfully!' });
+          }
+        } catch (error) {
+          console.error('Error updating PO items:', error);
+          toast({ title: 'PO updated but failed to update items', variant: 'destructive' });
+        }
+      } else {
+        toast({ title: isNew ? 'PO Created Successfully!' : 'PO Updated Successfully!' });
+      }
+
       router.push('/dashboard/purchase-orders');
     } catch (error) {
       console.error(error);
@@ -291,10 +344,8 @@ export default function PurchaseOrderFormPage() {
                      <div className="grid gap-2"><Label htmlFor="totalPembelianIdr">Total Pembelian (IDR)</Label>
                         <NumericInput id="totalPembelianIdr" value={po.totalPembelianIdr === undefined ? (po.totalRmb || 0) * (po.exchangeRate || 0) : po.totalPembelianIdr} onValueChange={(value) => handleInputChange('totalPembelianIdr', value)} />
                     </div>
-                     <div className="grid gap-2"><Label>Cost per Pcs (IDR)</Label>
-                        <div className='h-10 flex items-center px-3 text-sm text-muted-foreground border rounded-md bg-muted/50'>
-                             {(po.costPerPiece && po.costPerPiece > 0) ? po.costPerPiece.toLocaleString('id-ID', {style: 'currency', currency: 'IDR'}) : 'N/A'}
-                        </div>
+                     <div className="grid gap-2"><Label htmlFor="costPerPiece">Cost per Pcs (IDR)</Label>
+                        <NumericInput id="costPerPiece" value={po.costPerPiece || 0} onValueChange={(value) => handleInputChange('costPerPiece', value)} />
                     </div>
                 </div>
             </div>
@@ -322,18 +373,25 @@ export default function PurchaseOrderFormPage() {
             <Separator />
              <div className="space-y-4">
                 <h3 className="text-lg font-medium">Receiving & Confirmation</h3>
+                <p className="text-sm text-muted-foreground">These values are automatically populated from the PO Receive page</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     <div className="grid gap-2">
-                        <Label htmlFor="totalPcsOldReceived">Total Pcs Barang Lama Diterima</Label>
-                        <NumericInput id="totalPcsOldReceived" value={po.totalPcsOldReceived || 0} onValueChange={(value) => handleInputChange('totalPcsOldReceived', value)} />
+                        <Label htmlFor="qtyReceived">Qty Diterima</Label>
+                        <div className='h-10 flex items-center px-3 text-sm font-semibold border rounded-md bg-muted/50'>
+                            {po.qtyReceived || 0}
+                        </div>
                     </div>
                     <div className="grid gap-2">
-                        <Label htmlFor="totalPcsNewReceived">Total Pcs Barang Baru Diterima</Label>
-                        <NumericInput id="totalPcsNewReceived" value={po.totalPcsNewReceived || 0} onValueChange={(value) => handleInputChange('totalPcsNewReceived', value)} />
+                        <Label htmlFor="qtyNotReceived">Qty Tidak Diterima</Label>
+                        <div className='h-10 flex items-center px-3 text-sm font-semibold border rounded-md bg-muted/50'>
+                            {po.qtyNotReceived || 0}
+                        </div>
                     </div>
                     <div className="grid gap-2">
-                        <Label htmlFor="totalPcsRefunded">Total Pcs Refund ke Supplier</Label>
-                        <NumericInput id="totalPcsRefunded" value={po.totalPcsRefunded || 0} onValueChange={(value) => handleInputChange('totalPcsRefunded', value)} />
+                        <Label htmlFor="qtyDamaged">Qty Rusak</Label>
+                        <div className='h-10 flex items-center px-3 text-sm font-semibold border rounded-md bg-muted/50'>
+                            {po.qtyDamaged || 0}
+                        </div>
                     </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-4 pt-4">

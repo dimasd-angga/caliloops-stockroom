@@ -11,6 +11,7 @@ import {
     doc,
     updateDoc,
     deleteDoc,
+    getDoc,
 } from 'firebase/firestore';
 import type { Supplier } from '../types';
 
@@ -98,4 +99,15 @@ export const updateSupplier = async (id: string, data: Partial<Omit<Supplier, 'i
 export const deleteSupplier = async (id: string) => {
     const supplierDoc = doc(firestore, 'suppliers', id);
     await deleteDoc(supplierDoc);
+};
+
+export const getSupplierById = async (id: string): Promise<Supplier | null> => {
+    const supplierDoc = doc(firestore, 'suppliers', id);
+    const snapshot = await getDoc(supplierDoc);
+
+    if (!snapshot.exists()) {
+        return null;
+    }
+
+    return { id: snapshot.id, ...snapshot.data() } as Supplier;
 };

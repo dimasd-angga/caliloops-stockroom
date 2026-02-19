@@ -38,6 +38,7 @@ import {
 } from '@/lib/services/inboundService';
 import { subscribeToSuppliers } from '@/lib/services/supplierService';
 import { subscribeToPurchaseOrdersBySupplier } from '@/lib/services/purchaseOrderService';
+import { getShippingPOsForSku } from '@/lib/services/purchaseOrderItemService';
 import {
     PlusCircle,
     X,
@@ -49,6 +50,8 @@ import {
     ClipboardList,
     History,
     Edit,
+    Package,
+    Ship,
 } from 'lucide-react';
 import {
     Dialog,
@@ -65,7 +68,7 @@ import { Separator } from '@/components/ui/separator';
 import Barcode from 'react-barcode';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
-import { format } from 'date-fns';
+import { format, addMonths } from 'date-fns';
 import { subscribeToStockOpnameLogs } from '@/lib/services/stockOpnameService';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -88,9 +91,16 @@ interface SkuDetailProps {
     onBack: () => void;
     onSkuUpdate: (sku: Sku) => void;
     permissions: Permissions;
+    autoFillData?: {
+        supplierId: string;
+        supplierName: string;
+        poId: string;
+        poNumber: string;
+        poReceiveItemId: string;
+    };
 }
 
-export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }: SkuDetailProps) {
+export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions, autoFillData }: SkuDetailProps) {
     const { toast } = useToast();
     const router = useRouter();
     const { user, selectedStoreId } = React.useContext(UserContext);
@@ -134,6 +144,13 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
     // Reprint Confirmation Modal
     const [isReprintConfirmOpen, setIsReprintConfirmOpen] = React.useState(false);
     const [barcodesToReprint, setBarcodesToReprint] = React.useState<string[]>([]);
+
+    // Shipping POs State
+    const [shippingPOs, setShippingPOs] = React.useState<Array<{ quantity: number; poNumber: string; estimatedArrival: Date }>>([]);
+    const [loadingShippingInfo, setLoadingShippingInfo] = React.useState(false);
+
+    // PO Order Dates for Perkiraan Tiba
+    const [poOrderDates, setPoOrderDates] = React.useState<Map<string, Date>>(new Map());
 
     const pdfFilename = `barcodes-${format(new Date(), 'yyyy-MM-dd_HH-mm-ss')}.pdf`;
     const { toPDF, targetRef } = usePDF({
@@ -203,6 +220,15 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
         }
     }, [selectedSupplierId, storeId, toast]);
 
+    // Auto-fill form when coming from PO Receive
+    React.useEffect(() => {
+        if (autoFillData && autoFillData.supplierId && autoFillData.poId) {
+            console.log('[SkuDetail] Auto-filling form with:', autoFillData);
+            setSelectedSupplierId(autoFillData.supplierId);
+            setSelectedPurchaseOrderId(autoFillData.poId);
+        }
+    }, [autoFillData]);
+
     const handleGeneratePdf = async () => {
         setIsGeneratingPdf(true);
         try {
@@ -220,6 +246,23 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
         try {
             const shipments = await getShipmentsBySku(skuToFetch.id);
             setSkuShipments(shipments);
+
+            // Fetch PO order dates for each unique purchaseOrderId
+            const uniquePOIds = [...new Set(shipments.map(s => s.purchaseOrderId))];
+            const { getPurchaseOrderById } = await import('@/lib/services/purchaseOrderService');
+
+            const orderDatesMap = new Map<string, Date>();
+            for (const poId of uniquePOIds) {
+                try {
+                    const po = await getPurchaseOrderById(poId);
+                    if (po && po.orderDate) {
+                        orderDatesMap.set(poId, po.orderDate.toDate());
+                    }
+                } catch (err) {
+                    console.error('Error fetching PO order date:', err);
+                }
+            }
+            setPoOrderDates(orderDatesMap);
         } catch (e) {
             toast({
                 title: 'Error loading SKU details',
@@ -235,6 +278,35 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
         setSelectedSku(initialSku);
         fetchSkuDetails(initialSku);
     }, [initialSku, fetchSkuDetails]);
+
+    // Fetch shipping PO information
+    React.useEffect(() => {
+        const fetchShippingInfo = async () => {
+            if (!selectedSku?.id || !storeId) return;
+
+            setLoadingShippingInfo(true);
+            try {
+                const shippingPOsData = await getShippingPOsForSku(selectedSku.id, storeId);
+                if (shippingPOsData.length > 0) {
+                    const shippingInfo = shippingPOsData.map(({ po, totalQuantity }) => ({
+                        quantity: totalQuantity,
+                        poNumber: po.poNumber,
+                        estimatedArrival: addMonths(po.orderDate.toDate(), 1), // 1 month from order date
+                    }));
+                    setShippingPOs(shippingInfo);
+                } else {
+                    setShippingPOs([]);
+                }
+            } catch (error) {
+                console.error('Error fetching shipping info:', error);
+                setShippingPOs([]);
+            } finally {
+                setLoadingShippingInfo(false);
+            }
+        };
+
+        fetchShippingInfo();
+    }, [selectedSku?.id, storeId]);
 
     React.useEffect(() => {
         if (isAuditHistoryModalOpen && selectedSku?.storeId) {
@@ -652,19 +724,25 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
                                         <div className="grid gap-6 py-6">
                                             <div className="grid md:grid-cols-2 gap-4">
                                                 <div className="grid gap-2">
-                                                    <Label htmlFor="supplier">Supplier</Label>
-                                                    <Select value={selectedSupplierId} onValueChange={setSelectedSupplierId} required disabled={isSavingShipment}>
+                                                    <Label htmlFor="supplier">Supplier {autoFillData && <span className="text-xs text-muted-foreground">(Auto-filled)</span>}</Label>
+                                                    <Select value={selectedSupplierId} onValueChange={setSelectedSupplierId} required disabled={isSavingShipment || !!autoFillData}>
                                                         <SelectTrigger id="supplier"><SelectValue placeholder="Select a supplier" /></SelectTrigger>
                                                         <SelectContent>
+                                                            {autoFillData && (
+                                                                <SelectItem value={autoFillData.supplierId}>{autoFillData.supplierName}</SelectItem>
+                                                            )}
                                                             {suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                                                         </SelectContent>
                                                     </Select>
                                                 </div>
                                                 <div className="grid gap-2">
-                                                    <Label htmlFor="poNumber">PO Number</Label>
-                                                    <Select value={selectedPurchaseOrderId} onValueChange={setSelectedPurchaseOrderId} required disabled={isSavingShipment || !selectedSupplierId}>
+                                                    <Label htmlFor="poNumber">PO Number {autoFillData && <span className="text-xs text-muted-foreground">(Auto-filled)</span>}</Label>
+                                                    <Select value={selectedPurchaseOrderId} onValueChange={setSelectedPurchaseOrderId} required disabled={isSavingShipment || !selectedSupplierId || !!autoFillData}>
                                                         <SelectTrigger id="poNumber"><SelectValue placeholder="Select a PO" /></SelectTrigger>
                                                         <SelectContent>
+                                                            {autoFillData && (
+                                                                <SelectItem value={autoFillData.poId}>{autoFillData.poNumber}</SelectItem>
+                                                            )}
                                                             {purchaseOrders.map(p => <SelectItem key={p.id} value={p.id}>{p.poNumber}</SelectItem>)}
                                                         </SelectContent>
                                                     </Select>
@@ -713,6 +791,7 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
                 </div>
             </div>
 
+
             <Card>
                 <CardContent className="p-0">
                     <div className="w-full overflow-x-auto">
@@ -735,25 +814,28 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
                                     <TableHead>Status</TableHead>
                                     <TableHead>Printed</TableHead>
                                     <TableHead>Shipment Date</TableHead>
+                                    <TableHead>Perkiraan Tiba</TableHead>
+                                    <TableHead>Shipping Info</TableHead>
                                     <TableHead className='text-right'>Actions</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {loadingSkuDetails ? (
                                     <TableRow>
-                                        <TableCell colSpan={9} className="h-24 text-center">
+                                        <TableCell colSpan={11} className="h-24 text-center">
                                             <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
                                         </TableCell>
                                     </TableRow>
                                 ) : skuShipments.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={9} className="h-24 text-center">
+                                        <TableCell colSpan={11} className="h-24 text-center">
                                             No shipments found for this SKU yet.
                                         </TableCell>
                                     </TableRow>
                                 ) : (
                                     skuShipments.map((shipment) => (
                                         shipment.packs.map((pack) => {
+                                            const shippingInfo = shippingPOs.find(sp => sp.poNumber === shipment.poNumber);
                                             return (
                                                 <TableRow key={pack.id}>
                                                     {(hasUnprintedItems || permissions?.canReprintBarcode || permissions?.hasFullAccess) && (
@@ -797,6 +879,25 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions }:
                                                         </Badge>
                                                     </TableCell>
                                                     <TableCell>{shipment.createdAt.toDate().toLocaleDateString()}</TableCell>
+                                                    <TableCell>
+                                                        {poOrderDates.get(shipment.purchaseOrderId) ? (
+                                                            <span className="text-sm font-medium">
+                                                                {format(addMonths(poOrderDates.get(shipment.purchaseOrderId)!, 1), 'dd MMM yyyy')}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-sm text-muted-foreground">-</span>
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        {shippingInfo ? (
+                                                            <div className="text-sm">
+                                                                <div className="font-semibold text-blue-600">{shippingInfo.quantity} Pcs In Shipping</div>
+                                                                <div className="text-muted-foreground">Est: {format(shippingInfo.estimatedArrival, 'dd MMM yyyy')}</div>
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-sm text-muted-foreground">-</span>
+                                                        )}
+                                                    </TableCell>
                                                     <TableCell className="text-right">
                                                         {pack.barcodeId && (!pack.isPrinted || permissions?.canReprintBarcode || permissions?.hasFullAccess) && (
                                                             <Button
