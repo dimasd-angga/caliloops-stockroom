@@ -825,7 +825,7 @@ export function SkuList({
                                     </TableRow>
                                 ) : (
                                     skus.map((sku) => (
-                                        <TableRow key={sku.id}>
+                                        <TableRow key={sku.id} className={sku.isActive === false ? 'opacity-60' : ''}>
                                             <TableCell>
                                                 {sku.imageUrl ? (
                                                     <Dialog>
@@ -849,7 +849,14 @@ export function SkuList({
                                             </TableCell>
                                             <TableCell className="font-medium">
                                                 <div className="space-y-1">
-                                                    <div>{sku.skuName}</div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span>{sku.skuName}</span>
+                                                        {sku.isActive === false && (
+                                                            <Badge variant="outline" className="text-xs bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+                                                                Inactive
+                                                            </Badge>
+                                                        )}
+                                                    </div>
                                                     {loadingPerkiraanTiba ? (
                                                         <div className="text-xs text-muted-foreground italic">
                                                             Loading...
