@@ -1,0 +1,21 @@
+{
+  "default_branch": "main",
+  "branches": [
+    "cal-phase3",
+    "dev",
+    "fix-export",
+    "main"
+  ],
+  "parent": {
+    "cal-phase3": "main",
+    "dev": "main",
+    "fix-export": "main",
+    "main": null
+  },
+  "order": [
+    "main",
+    "cal-phase3",
+    "dev",
+    "fix-export"
+  ]
+}
