@@ -113,6 +113,7 @@ export type Sku = {
   lastAuditDate?: Timestamp;
   imageUrl?: string;
   keywords?: string[];
+  isActive?: boolean;
   // Shipping info (calculated, not stored in DB)
   shippingInfo?: Array<{
     quantity: number;
