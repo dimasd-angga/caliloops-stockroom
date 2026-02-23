@@ -104,10 +104,11 @@ export const addSku = async (
     ...skuData,
     remainingPacks: 0,
     remainingQuantity: 0,
+    isActive: true,
     createdAt: Timestamp.now(),
   };
   const docRef = await addDoc(skusCollection, newSku);
-  
+
   return docRef.id;
 };
 
@@ -188,6 +189,7 @@ export const searchSkus = async (storeId: string, searchTerm: string, limitCount
 
   // Client-side filtering with ranking
   const matches = allSkus
+    .filter(sku => sku.isActive !== false)
     .map((sku) => {
       const skuCodeLower = sku.skuCode.toLowerCase();
       const skuNameLower = sku.skuName.toLowerCase();

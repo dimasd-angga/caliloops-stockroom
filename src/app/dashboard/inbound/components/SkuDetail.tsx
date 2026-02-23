@@ -52,6 +52,8 @@ import {
     Edit,
     Package,
     Ship,
+    Upload,
+    AlertCircle,
 } from 'lucide-react';
 import {
     Dialog,
@@ -75,6 +77,12 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
 import { usePDF } from 'react-to-pdf';
 import { NumericInput } from '@/components/ui/numeric-input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
+import { useSkuImageUpload } from '@/hooks/useSkuImageUpload';
+import { Switch } from '@/components/ui/switch';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import Image from 'next/image';
 
 const units: Unit[] = ['pcs', 'box', 'carton', 'pallet'];
 
@@ -115,6 +123,16 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions, a
     const [isEditSkuModalOpen, setIsEditSkuModalOpen] = React.useState(false);
     const [editingSku, setEditingSku] = React.useState<Sku | null>(null);
     const [isSavingSku, setIsSavingSku] = React.useState(false);
+
+    // Edit SKU - Image Upload State
+    const [imageInputMethod, setImageInputMethod] = React.useState<'url' | 'upload'>('url');
+    const [selectedFile, setSelectedFile] = React.useState<File | null>(null);
+    const [previewUrl, setPreviewUrl] = React.useState('');
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
+    const { uploadImage, uploading, progress, error: uploadError, resetState } = useSkuImageUpload();
+
+    // Edit SKU - Status Warning State
+    const [showInactiveWarning, setShowInactiveWarning] = React.useState(false);
 
     // Create Shipment Modal State
     const [isCreateShipmentModalOpen, setIsCreateShipmentModalOpen] = React.useState(false);
@@ -327,8 +345,49 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions, a
         }
     }, [isAuditHistoryModalOpen, selectedSku?.storeId, selectedSku?.skuCode, toast]);
 
+    const handleFileSelect = (file: File) => {
+        // Validate file size (5MB max)
+        if (file.size > 5 * 1024 * 1024) {
+            toast({ title: 'File too large', description: 'Please select an image under 5MB' });
+            return;
+        }
+        // Validate file type
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+        if (!allowedTypes.includes(file.type)) {
+            toast({ title: 'Invalid file type', description: 'Please select a JPG, PNG, WebP, or GIF image' });
+            return;
+        }
+        setSelectedFile(file);
+        // Generate preview
+        const reader = new FileReader();
+        reader.onload = (e) => setPreviewUrl(e.target?.result as string);
+        reader.readAsDataURL(file);
+    };
+
+    const handleClearFile = () => {
+        setSelectedFile(null);
+        setPreviewUrl('');
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+
+    const handleActiveToggle = (checked: boolean) => {
+        if (!editingSku) return;
+        // Show warning if marking as inactive and has inventory
+        if (!checked && (editingSku.remainingQuantity > 0 || editingSku.remainingPacks > 0)) {
+            setShowInactiveWarning(true);
+        } else {
+            setShowInactiveWarning(false);
+        }
+        setEditingSku(prev => prev ? { ...prev, isActive: checked } : null);
+    };
+
     const handleOpenEditSkuModal = (sku: Sku) => {
-        setEditingSku({ ...sku });
+        setEditingSku({ ...sku, isActive: sku.isActive ?? true });
+        setImageInputMethod('url');
+        setSelectedFile(null);
+        setPreviewUrl('');
+        setShowInactiveWarning(false);
+        resetState();
         setIsEditSkuModalOpen(true);
     }
 
@@ -339,12 +398,30 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions, a
         setIsSavingSku(true);
         try {
             const finalSkuName = editingSku.skuName.trim() === '' ? editingSku.skuCode : editingSku.skuName;
+
+            // Handle image upload if file is selected
+            let finalImageUrl = editingSku.imageUrl;
+            if (imageInputMethod === 'upload' && selectedFile) {
+                try {
+                    const uploadResult = await uploadImage(selectedFile, editingSku.storeId, editingSku.skuCode);
+                    finalImageUrl = uploadResult.url;
+                } catch (error) {
+                    console.error('Image upload failed:', error);
+                    toast({
+                        title: 'Image upload failed',
+                        description: 'SKU will be updated without changing the image.',
+                        variant: 'destructive',
+                    });
+                }
+            }
+
             const updateData = {
                 skuName: finalSkuName,
-                imageUrl: editingSku.imageUrl,
+                imageUrl: finalImageUrl,
+                isActive: editingSku.isActive ?? true,
             };
             await updateSkuDetails(editingSku.id, updateData);
-            onSkuUpdate({ ...selectedSku, ...updateData }); // Update parent state
+            onSkuUpdate({ ...selectedSku, ...updateData });
             toast({ title: "SKU updated successfully!" });
             setIsEditSkuModalOpen(false);
             setEditingSku(null);
@@ -393,6 +470,17 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions, a
             toast({ title: "No SKU selected", variant: "destructive" });
             return;
         }
+
+        // Prevent shipment creation for inactive SKUs
+        if (selectedSku.isActive === false) {
+            toast({
+                title: "Cannot create shipment",
+                description: "This SKU is inactive. Please activate it first.",
+                variant: "destructive"
+            });
+            return;
+        }
+
         if (!permissions?.canGenerateBarcode && !permissions?.hasFullAccess) {
             toast({ title: "Permission Denied", variant: "destructive" });
             return;
@@ -607,9 +695,135 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions, a
                                                 <Label htmlFor="editingSkuCode">SKU Code</Label>
                                                 <Input id="editingSkuCode" value={editingSku?.skuCode || ''} disabled />
                                             </div>
+
+                                            {/* Status Toggle */}
                                             <div className="grid gap-2">
-                                                <Label htmlFor="editingSkuImageUrl">Image URL (Optional)</Label>
-                                                <Input id="editingSkuImageUrl" value={editingSku?.imageUrl || ''} onChange={(e) => setEditingSku(prev => prev ? {...prev, imageUrl: e.target.value} : null)} placeholder="https://example.com/image.jpg" />
+                                                <div className="flex items-center justify-between">
+                                                    <Label htmlFor="editingSkuActive">Status</Label>
+                                                    <div className="flex items-center space-x-2">
+                                                        <Switch
+                                                            id="editingSkuActive"
+                                                            checked={editingSku?.isActive ?? true}
+                                                            onCheckedChange={handleActiveToggle}
+                                                            disabled={isSavingSku}
+                                                        />
+                                                        <span className="text-sm text-muted-foreground">
+                                                            {editingSku?.isActive ?? true ? 'Active' : 'Inactive'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <p className="text-xs text-muted-foreground">
+                                                    Inactive SKUs won&apos;t appear in search and cannot receive new shipments
+                                                </p>
+                                            </div>
+
+                                            {/* Inventory Warning */}
+                                            {showInactiveWarning && (
+                                                <Alert variant="destructive">
+                                                    <AlertCircle className="h-4 w-4" />
+                                                    <AlertTitle>Warning</AlertTitle>
+                                                    <AlertDescription>
+                                                        This SKU has {editingSku?.remainingPacks} remaining packs ({editingSku?.remainingQuantity} pieces).
+                                                        Marking it as inactive will hide it from selectors but won&apos;t affect existing inventory.
+                                                    </AlertDescription>
+                                                </Alert>
+                                            )}
+
+                                            {/* Image Upload */}
+                                            <div className="grid gap-2">
+                                                <Label>Product Image (Optional)</Label>
+                                                <Tabs
+                                                    value={imageInputMethod}
+                                                    onValueChange={(v) => setImageInputMethod(v as 'url' | 'upload')}
+                                                >
+                                                    <TabsList className="grid w-full grid-cols-2">
+                                                        <TabsTrigger value="url">Image URL</TabsTrigger>
+                                                        <TabsTrigger value="upload">Upload File</TabsTrigger>
+                                                    </TabsList>
+
+                                                    <TabsContent value="url" className="space-y-3">
+                                                        <Input
+                                                            value={editingSku?.imageUrl || ''}
+                                                            onChange={(e) => setEditingSku(prev => prev ? {...prev, imageUrl: e.target.value} : null)}
+                                                            placeholder="https://example.com/image.jpg"
+                                                            disabled={isSavingSku}
+                                                        />
+                                                    </TabsContent>
+
+                                                    <TabsContent value="upload" className="space-y-3">
+                                                        <input
+                                                            ref={fileInputRef}
+                                                            type="file"
+                                                            accept="image/jpeg,image/png,image/webp,image/gif"
+                                                            onChange={(e) => {
+                                                                const file = e.target.files?.[0];
+                                                                if (file) handleFileSelect(file);
+                                                            }}
+                                                            className="hidden"
+                                                            disabled={isSavingSku}
+                                                        />
+
+                                                        {!selectedFile ? (
+                                                            <Button
+                                                                type="button"
+                                                                variant="outline"
+                                                                onClick={() => fileInputRef.current?.click()}
+                                                                disabled={isSavingSku}
+                                                                className="w-full"
+                                                            >
+                                                                <Upload className="mr-2 h-4 w-4" />
+                                                                Choose Image
+                                                            </Button>
+                                                        ) : (
+                                                            <div className="border rounded-md p-3 space-y-2">
+                                                                <div className="flex items-center justify-between">
+                                                                    <span className="text-sm truncate flex-1">{selectedFile.name}</span>
+                                                                    <Button
+                                                                        type="button"
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        onClick={handleClearFile}
+                                                                        disabled={isSavingSku || uploading}
+                                                                    >
+                                                                        <X className="h-4 w-4" />
+                                                                    </Button>
+                                                                </div>
+                                                                <p className="text-xs text-muted-foreground">
+                                                                    {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                                                                </p>
+                                                                {uploading && <Progress value={progress} className="h-2" />}
+                                                            </div>
+                                                        )}
+
+                                                        <p className="text-xs text-muted-foreground">
+                                                            Max 5MB. Supported: JPG, PNG, WebP, GIF
+                                                        </p>
+                                                    </TabsContent>
+                                                </Tabs>
+
+                                                {/* Image Preview */}
+                                                {(previewUrl || editingSku?.imageUrl) && (
+                                                    <div className="border rounded-md p-3">
+                                                        <p className="text-sm font-medium mb-2">Preview</p>
+                                                        <div className="relative w-full h-32 bg-muted rounded flex items-center justify-center">
+                                                            <Image
+                                                                src={previewUrl || editingSku?.imageUrl || ''}
+                                                                alt="Preview"
+                                                                fill
+                                                                className="object-contain"
+                                                                onError={(e) => {
+                                                                    const target = e.target as HTMLImageElement;
+                                                                    target.style.display = 'none';
+                                                                }}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {/* Upload Error */}
+                                                {uploadError && (
+                                                    <p className="text-sm text-destructive">{uploadError}</p>
+                                                )}
                                             </div>
                                         </div>
                                         <DialogFooter>
@@ -713,7 +927,7 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions, a
                         {(permissions?.canGenerateBarcode || permissions?.hasFullAccess) && (
                             <Dialog open={isCreateShipmentModalOpen} onOpenChange={setIsCreateShipmentModalOpen}>
                                 <DialogTrigger asChild>
-                                    <Button size="sm"><PlusCircle className="mr-2 h-4 w-4"/>New Shipment</Button>
+                                    <Button size="sm" disabled={selectedSku.isActive === false}><PlusCircle className="mr-2 h-4 w-4"/>New Shipment</Button>
                                 </DialogTrigger>
                                 <DialogContent>
                                     <form onSubmit={handleSubmitShipment}>
@@ -791,6 +1005,16 @@ export function SkuDetail({ sku: initialSku, onBack, onSkuUpdate, permissions, a
                 </div>
             </div>
 
+            {selectedSku.isActive === false && (
+                <Alert variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle>Inactive SKU</AlertTitle>
+                    <AlertDescription>
+                        This SKU is marked as inactive. You cannot create new shipments for inactive SKUs.
+                        To add inventory, please activate this SKU first using the Edit button.
+                    </AlertDescription>
+                </Alert>
+            )}
 
             <Card>
                 <CardContent className="p-0">
