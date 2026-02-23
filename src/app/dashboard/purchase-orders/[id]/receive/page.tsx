@@ -190,6 +190,25 @@ export default function POReceivePage() {
 
   // Handle Input Terima (Inbound)
   const handleInputTerima = async (item: POReceiveItem) => {
+    // Check if SKU is active
+    if (item.skuId) {
+      try {
+        const { getSkuById } = await import('@/lib/services/skuService');
+        const sku = await getSkuById(item.skuId);
+
+        if (sku && sku.isActive === false) {
+          toast({
+            title: 'Cannot create shipment',
+            description: 'This SKU is marked as inactive. Please activate it before adding inventory.',
+            variant: 'destructive',
+          });
+          return;
+        }
+      } catch (error) {
+        console.error('Error checking SKU status:', error);
+      }
+    }
+
     setSelectedItem(item);
 
     // Try to load existing draft
