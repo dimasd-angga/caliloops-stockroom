@@ -20,6 +20,7 @@
 # production
 /build
 
+temp_auto_push.bat
 # misc
 .DS_Store
 *.pem
@@ -38,8 +39,9 @@ yarn-error.log*
 next-env.d.ts
 
 .genkit/*
-.env*
 
 # firebase
 firebase-debug.log
-firestore-debug.log
+firestore-debug.log.gitignore
+branch_structure.json
+config.bat
